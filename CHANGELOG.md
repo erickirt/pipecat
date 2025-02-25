@@ -5,9 +5,21 @@ All notable changes to **Pipecat** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [Unreleased]
 
 ### Added
+
+- Added a new `PipelineTask` parameter `observers` that replaces the previous
+  `PipelineParams.observers`.
+
+- Added a new `PipelineTask` parameter `check_dangling_tasks` to enable or
+  disable checking for frame processors' dangling tasks when the Pipeline
+  finishes running.
+
+- Added new `on_completion_timeout` event for LLM services (all OpenAI-based
+  services, Anthropic and Google). Note that this event will only get triggered
+  if LLM timeouts are setup and if the timeout was reached. It can be useful to
+  retrigger another completion and see if the timeout was just a blip.
 
 - Added new log observers `LLMLogObserver` and `TranscriptionLogObserver` that
   can be useful for debugging your pipelines.
@@ -19,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `exponential_backoff_time()` to `utils.network` module.
 
 ### Changed
+
+- `GrokLLMSService` now uses `grok-2` as the default model.
+
+- `AnthropicLLMService` now uses `claude-3-7-sonnet-20250219` as the default
+  model.
 
 - `RimeHttpTTSService` needs an `aiohttp.ClientSession` to be passed to the
   constructor as all the other HTTP-based services.
@@ -33,11 +50,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 stt = DeepgramSTTService(..., live_options=LiveOptions(model="nova-2-general"))
 ```
 
+### Deprecated
+
+- `PipelineParams.observers` is now deprecated, you the new `PipelineTask`
+  parameter `observers`.
+
 ### Removed
 
 - Remove `TransportParams.audio_out_is_live` since it was not being used at all.
 
 ### Fixed
+
+- Fixed an issue that was not allowing to pass an `OpenAILLMContext` to create
+  `GoogleLLMService`'s context aggregators.
+
+- Fixed a `ElevenLabsTTSService`, `FishAudioTTSService`, `LMNTTTSService` and
+  `PlayHTTTSService` issue that was resulting in audio requested before an
+  interruption being played after an interruption.
 
 - Fixed `match_endofsentence` support for ellipses.
 

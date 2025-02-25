@@ -122,14 +122,18 @@ class PipelineTask(BaseTask):
     Args:
         pipeline: The pipeline to execute.
         params: Configuration parameters for the pipeline.
+        observers: List of observers for monitoring pipeline execution.
         clock: Clock implementation for timing operations.
+        check_dangling_tasks: Whether to check for processors' tasks finishing properly.
     """
 
     def __init__(
         self,
         pipeline: BasePipeline,
         params: PipelineParams = PipelineParams(),
+        observers: List[BaseObserver] = [],
         clock: BaseClock = SystemClock(),
+        check_dangling_tasks: bool = True,
     ):
         self._id: int = obj_id()
         self._name: str = f"{self.__class__.__name__}#{obj_count(self)}"
@@ -137,6 +141,17 @@ class PipelineTask(BaseTask):
         self._pipeline = pipeline
         self._clock = clock
         self._params = params
+        self._check_dangling_tasks = check_dangling_tasks
+        if self._params.observers:
+            import warnings
+
+            with warnings.catch_warnings():
+                warnings.simplefilter("always")
+                warnings.warn(
+                    "Field 'observers' is deprecated, use the 'observers' parameter instead.",
+                    DeprecationWarning,
+                )
+            observers = self._params.observers
         self._finished = False
 
         # This queue receives frames coming from the pipeline upstream.
@@ -160,7 +175,7 @@ class PipelineTask(BaseTask):
 
         self._task_manager = TaskManager()
 
-        self._observer = TaskObserver(observers=params.observers, task_manager=self._task_manager)
+        self._observer = TaskObserver(observers=observers, task_manager=self._task_manager)
 
     @property
     def id(self) -> int:
@@ -220,7 +235,8 @@ class PipelineTask(BaseTask):
             pass
         await self._cancel_tasks()
         await self._cleanup()
-        self._print_dangling_tasks()
+        if self._check_dangling_tasks:
+            self._print_dangling_tasks()
         self._finished = True
 
     async def queue_frame(self, frame: Frame):
