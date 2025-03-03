@@ -8,11 +8,19 @@ import base64
 import io
 import json
 from dataclasses import dataclass
-from typing import Any, AsyncGenerator, Dict, List, Literal, Optional
+from typing import Any, AsyncGenerator, Dict, List, Literal, Mapping, Optional
 
 import aiohttp
 import httpx
 from loguru import logger
+from openai import (
+    NOT_GIVEN,
+    AsyncOpenAI,
+    AsyncStream,
+    BadRequestError,
+    DefaultAsyncHttpxClient,
+)
+from openai.types.chat import ChatCompletionChunk, ChatCompletionMessageParam
 from PIL import Image
 from pydantic import BaseModel, Field
 
@@ -56,23 +64,6 @@ from pipecat.services.ai_services import (
 from pipecat.services.base_whisper import BaseWhisperSTTService, Transcription
 from pipecat.transcriptions.language import Language
 from pipecat.utils.time import time_now_iso8601
-
-try:
-    from openai import (
-        NOT_GIVEN,
-        AsyncOpenAI,
-        AsyncStream,
-        BadRequestError,
-        DefaultAsyncHttpxClient,
-    )
-    from openai.types.chat import ChatCompletionChunk, ChatCompletionMessageParam
-except ModuleNotFoundError as e:
-    logger.error(f"Exception: {e}")
-    logger.error(
-        "In order to use OpenAI, you need to `pip install pipecat-ai[openai]`. Also, set `OPENAI_API_KEY` environment variable."
-    )
-    raise Exception(f"Missing module: {e}")
-
 
 ValidVoice = Literal["alloy", "echo", "fable", "onyx", "nova", "shimmer"]
 
@@ -187,7 +178,7 @@ class BaseOpenAILLMService(LLMService):
     async def _stream_chat_completions(
         self, context: OpenAILLMContext
     ) -> AsyncStream[ChatCompletionChunk]:
-        logger.debug(f"Generating chat: {context.get_messages_for_logging()}")
+        logger.debug(f"{self}: Generating chat [{context.get_messages_for_logging()}]")
 
         messages: List[ChatCompletionMessageParam] = context.get_messages()
 
@@ -319,11 +310,15 @@ class BaseOpenAILLMService(LLMService):
             await self.push_frame(frame, direction)
 
         if context:
-            await self.push_frame(LLMFullResponseStartFrame())
-            await self.start_processing_metrics()
-            await self._process_context(context)
-            await self.stop_processing_metrics()
-            await self.push_frame(LLMFullResponseEndFrame())
+            try:
+                await self.push_frame(LLMFullResponseStartFrame())
+                await self.start_processing_metrics()
+                await self._process_context(context)
+            except httpx.TimeoutException:
+                await self._call_event_handler("on_completion_timeout")
+            finally:
+                await self.stop_processing_metrics()
+                await self.push_frame(LLMFullResponseEndFrame())
 
 
 @dataclass
@@ -350,12 +345,32 @@ class OpenAILLMService(BaseOpenAILLMService):
 
     @staticmethod
     def create_context_aggregator(
-        context: OpenAILLMContext, *, assistant_expect_stripped_words: bool = True
+        context: OpenAILLMContext,
+        *,
+        user_kwargs: Mapping[str, Any] = {},
+        assistant_kwargs: Mapping[str, Any] = {},
     ) -> OpenAIContextAggregatorPair:
-        user = OpenAIUserContextAggregator(context)
-        assistant = OpenAIAssistantContextAggregator(
-            context, expect_stripped_words=assistant_expect_stripped_words
-        )
+        """Create an instance of OpenAIContextAggregatorPair from an
+        OpenAILLMContext. Constructor keyword arguments for both the user and
+        assistant aggregators can be provided.
+
+        Args:
+            context (OpenAILLMContext): The LLM context.
+            user_kwargs (Mapping[str, Any], optional): Additional keyword
+                arguments for the user context aggregator constructor. Defaults
+                to an empty mapping.
+            assistant_kwargs (Mapping[str, Any], optional): Additional keyword
+                arguments for the assistant context aggregator
+                constructor. Defaults to an empty mapping.
+
+        Returns:
+            OpenAIContextAggregatorPair: A pair of context aggregators, one for
+            the user and one for the assistant, encapsulated in an
+            OpenAIContextAggregatorPair.
+
+        """
+        user = OpenAIUserContextAggregator(context, **user_kwargs)
+        assistant = OpenAIAssistantContextAggregator(context, **assistant_kwargs)
         return OpenAIContextAggregatorPair(_user=user, _assistant=assistant)
 
 
@@ -513,7 +528,7 @@ class OpenAITTSService(TTSService):
             )
 
     async def run_tts(self, text: str) -> AsyncGenerator[Frame, None]:
-        logger.debug(f"Generating TTS: [{text}]")
+        logger.debug(f"{self}: Generating TTS [{text}]")
         try:
             await self.start_ttfb_metrics()
 
@@ -535,8 +550,10 @@ class OpenAITTSService(TTSService):
 
                 await self.start_tts_usage_metrics(text)
 
+                CHUNK_SIZE = 1024
+
                 yield TTSStartedFrame()
-                async for chunk in r.iter_bytes(8192):
+                async for chunk in r.iter_bytes(CHUNK_SIZE):
                     if len(chunk) > 0:
                         await self.stop_ttfb_metrics()
                         frame = TTSAudioRawFrame(chunk, self.sample_rate, 1)
