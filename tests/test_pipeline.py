@@ -12,7 +12,7 @@ from pipecat.pipeline.parallel_pipeline import ParallelPipeline
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.filters.identity_filter import IdentityFilter
-from pipecat.processors.frame_processor import FrameProcessor
+from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.tests.utils import HeartbeatsObserver, run_test
 
 
@@ -94,6 +94,42 @@ class TestPipelineTask(unittest.IsolatedAsyncioTestCase):
         await task.run()
         assert task.has_finished()
 
+    async def test_task_event_handlers(self):
+        upstream_received = False
+        downstream_received = False
+
+        identity = IdentityFilter()
+        pipeline = Pipeline([identity])
+        task = PipelineTask(pipeline)
+        task.set_event_loop(asyncio.get_event_loop())
+        task.set_reached_upstream_filter((TextFrame,))
+        task.set_reached_downstream_filter((TextFrame,))
+
+        @task.event_handler("on_frame_reached_upstream")
+        async def on_frame_reached_upstream(task, frame):
+            nonlocal upstream_received
+            if isinstance(frame, TextFrame) and frame.text == "Hello Upstream!":
+                upstream_received = True
+
+        @task.event_handler("on_frame_reached_downstream")
+        async def on_frame_reached_downstream(task, frame):
+            nonlocal downstream_received
+            if isinstance(frame, TextFrame) and frame.text == "Hello Downstream!":
+                downstream_received = True
+                await identity.push_frame(
+                    TextFrame(text="Hello Upstream!"), FrameDirection.UPSTREAM
+                )
+
+        await task.queue_frame(TextFrame(text="Hello Downstream!"))
+
+        try:
+            await asyncio.wait_for(task.run(), timeout=1.0)
+        except asyncio.TimeoutError:
+            pass
+
+        assert upstream_received
+        assert downstream_received
+
     async def test_task_heartbeats(self):
         heartbeats_counter = 0
 
@@ -111,8 +147,8 @@ class TestPipelineTask(unittest.IsolatedAsyncioTestCase):
             params=PipelineParams(
                 enable_heartbeats=True,
                 heartbeats_period_secs=0.2,
-                observers=[heartbeats_observer],
             ),
+            observers=[heartbeats_observer],
         )
         task.set_event_loop(asyncio.get_event_loop())
 

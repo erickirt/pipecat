@@ -6,7 +6,6 @@
 
 import asyncio
 import time
-import warnings
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Mapping, Optional
@@ -18,7 +17,7 @@ from daily import (
     VirtualSpeakerDevice,
 )
 from loguru import logger
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel
 
 from pipecat.audio.vad.vad_analyzer import VADAnalyzer, VADParams
 from pipecat.frames.frames import (
@@ -43,7 +42,7 @@ from pipecat.transcriptions.language import Language
 from pipecat.transports.base_input import BaseInputTransport
 from pipecat.transports.base_output import BaseOutputTransport
 from pipecat.transports.base_transport import BaseTransport, TransportParams
-from pipecat.utils.asyncio import TaskManager
+from pipecat.utils.asyncio import BaseTaskManager
 
 try:
     from daily import CallClient, Daily, EventHandler
@@ -124,7 +123,6 @@ class DailyTranscriptionSettings(BaseModel):
 
     Attributes:
         language: ISO language code for transcription (e.g. "en").
-        tier: Deprecated. Use model instead.
         model: Transcription model to use (e.g. "nova-2-general").
         profanity_filter: Whether to filter profanity from transcripts.
         redact: Whether to redact sensitive information.
@@ -135,7 +133,6 @@ class DailyTranscriptionSettings(BaseModel):
     """
 
     language: str = "en"
-    tier: Optional[str] = None
     model: str = "nova-2-general"
     profanity_filter: bool = True
     redact: bool = False
@@ -143,16 +140,6 @@ class DailyTranscriptionSettings(BaseModel):
     punctuate: bool = True
     includeRawResponse: bool = True
     extra: Mapping[str, Any] = {"interim_results": True}
-
-    @model_validator(mode="before")
-    def check_deprecated_fields(cls, values):
-        with warnings.catch_warnings():
-            warnings.simplefilter("always")
-            if "tier" in values:
-                warnings.warn(
-                    "Field 'tier' is deprecated, use 'model' instead.", DeprecationWarning
-                )
-        return values
 
 
 class DailyParams(TransportParams):
@@ -293,7 +280,7 @@ class DailyTransportClient(EventHandler):
         self._joined_event = asyncio.Event()
         self._leave_counter = 0
 
-        self._task_manager: Optional[TaskManager] = None
+        self._task_manager: Optional[BaseTaskManager] = None
 
         # We use the executor to cleanup the client. We just do it from one
         # place, so only one thread is really needed.
@@ -832,6 +819,9 @@ class DailyInputTransport(BaseInputTransport):
 
         self._video_renderers = {}
 
+        # Whether we have seen a StartFrame already.
+        self._initialized = False
+
         # Task that gets audio data from a device or the network and queues it
         # internally to be processed.
         self._audio_in_task = None
@@ -845,13 +835,19 @@ class DailyInputTransport(BaseInputTransport):
     def start_audio_in_streaming(self):
         # Create audio task. It reads audio frames from Daily and push them
         # internally for VAD processing.
-        if self._params.audio_in_enabled or self._params.vad_enabled:
+        if not self._audio_in_task and (self._params.audio_in_enabled or self._params.vad_enabled):
             logger.debug(f"Start receiving audio")
             self._audio_in_task = self.create_task(self._audio_in_task_handler())
 
     async def start(self, frame: StartFrame):
         # Parent start.
         await super().start(frame)
+
+        if self._initialized:
+            return
+
+        self._initialized = True
+
         # Setup client.
         await self._client.setup(frame)
         # Join the room.
@@ -980,9 +976,18 @@ class DailyOutputTransport(BaseOutputTransport):
 
         self._client = client
 
+        # Whether we have seen a StartFrame already.
+        self._initialized = False
+
     async def start(self, frame: StartFrame):
         # Parent start.
         await super().start(frame)
+
+        if self._initialized:
+            return
+
+        self._initialized = True
+
         # Setup client.
         await self._client.setup(frame)
         # Join the room.

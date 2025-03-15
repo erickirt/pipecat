@@ -4,19 +4,21 @@
 # SPDX-License-Identifier: BSD 2-Clause License
 #
 
+import asyncio
 import base64
 import copy
 import io
 import json
 import re
-from asyncio import CancelledError
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Mapping, Optional, Union
 
+import httpx
 from loguru import logger
 from PIL import Image
 from pydantic import BaseModel, Field
 
+from pipecat.adapters.services.anthropic_adapter import AnthropicLLMAdapter
 from pipecat.frames.frames import (
     Frame,
     FunctionCallInProgressFrame,
@@ -84,6 +86,9 @@ class AnthropicLLMService(LLMService):
     use `AsyncAnthropicBedrock` and `AsyncAnthropicVertex` clients
     """
 
+    # Overriding the default adapter to use the Anthropic one.
+    adapter_class = AnthropicLLMAdapter
+
     class InputParams(BaseModel):
         enable_prompt_caching_beta: Optional[bool] = False
         max_tokens: Optional[int] = Field(default_factory=lambda: 4096, ge=1)
@@ -96,7 +101,7 @@ class AnthropicLLMService(LLMService):
         self,
         *,
         api_key: str,
-        model: str = "claude-3-5-sonnet-20241022",
+        model: str = "claude-3-7-sonnet-20250219",
         params: InputParams = InputParams(),
         client=None,
         **kwargs,
@@ -122,16 +127,38 @@ class AnthropicLLMService(LLMService):
     def enable_prompt_caching_beta(self) -> bool:
         return self._enable_prompt_caching_beta
 
-    @staticmethod
     def create_context_aggregator(
-        context: OpenAILLMContext, *, assistant_expect_stripped_words: bool = True
+        self,
+        context: OpenAILLMContext,
+        *,
+        user_kwargs: Mapping[str, Any] = {},
+        assistant_kwargs: Mapping[str, Any] = {},
     ) -> AnthropicContextAggregatorPair:
+        """Create an instance of AnthropicContextAggregatorPair from an
+        OpenAILLMContext. Constructor keyword arguments for both the user and
+        assistant aggregators can be provided.
+
+        Args:
+            context (OpenAILLMContext): The LLM context.
+            user_kwargs (Mapping[str, Any], optional): Additional keyword
+                arguments for the user context aggregator constructor. Defaults
+                to an empty mapping.
+            assistant_kwargs (Mapping[str, Any], optional): Additional keyword
+                arguments for the assistant context aggregator
+                constructor. Defaults to an empty mapping.
+
+        Returns:
+            AnthropicContextAggregatorPair: A pair of context aggregators, one
+            for the user and one for the assistant, encapsulated in an
+            AnthropicContextAggregatorPair.
+
+        """
+        context.set_llm_adapter(self.get_llm_adapter())
+
         if isinstance(context, OpenAILLMContext):
             context = AnthropicLLMContext.from_openai_context(context)
-        user = AnthropicUserContextAggregator(context)
-        assistant = AnthropicAssistantContextAggregator(
-            context, expect_stripped_words=assistant_expect_stripped_words
-        )
+        user = AnthropicUserContextAggregator(context, **user_kwargs)
+        assistant = AnthropicAssistantContextAggregator(context, **assistant_kwargs)
         return AnthropicContextAggregatorPair(_user=user, _assistant=assistant)
 
     async def _process_context(self, context: OpenAILLMContext):
@@ -151,7 +178,7 @@ class AnthropicLLMService(LLMService):
             await self.start_processing_metrics()
 
             logger.debug(
-                f"Generating chat: {context.system} | {context.get_messages_for_logging()}"
+                f"{self}: Generating chat [{context.system}] | [{context.get_messages_for_logging()}]"
             )
 
             messages = context.messages
@@ -251,12 +278,14 @@ class AnthropicLLMService(LLMService):
                     if total_input_tokens >= 1024:
                         context.turns_above_cache_threshold += 1
 
-        except CancelledError:
+        except asyncio.CancelledError:
             # If we're interrupted, we won't get a complete usage report. So set our flag to use the
             # token estimate. The reraise the exception so all the processors running in this task
             # also get cancelled.
             use_completion_tokens_estimate = True
             raise
+        except httpx.TimeoutException:
+            await self._call_event_handler("on_completion_timeout")
         except Exception as e:
             logger.exception(f"{self} exception: {e}")
         finally:
@@ -359,6 +388,7 @@ class AnthropicLLMContext(OpenAILLMContext):
             tools=openai_context.tools,
             tool_choice=openai_context.tool_choice,
         )
+        self.set_llm_adapter(openai_context.get_llm_adapter())
         self._restructure_from_openai_messages()
         return self
 

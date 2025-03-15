@@ -5,9 +5,147 @@ All notable changes to **Pipecat** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [Unreleased]
 
 ### Added
+
+- Added new `BaseTextAggregator`. Text aggregators are used by the TTS service
+  to aggregate LLM tokens and decide when the aggregated text should be pushed
+  to the TTS service. It also allows for the text to be manipulated while it's
+  being aggregated.
+
+- Added new `UltravoxSTTService`.
+  (see https://github.com/fixie-ai/ultravox)
+
+- Added `on_frame_reached_upstream` and `on_frame_reached_downstream` event
+  handlers to `PipelineTask`. Those events will be called when a frame reaches
+  the beginning or end of the pipeline respectively. Note that by default, the
+  event handlers will not be called unless a filter is set with
+  `PipelineTask.set_reached_upstream_filter()` or
+  `PipelineTask.set_reached_downstream_filter()`.
+
+- Added support for Chirp voices in `GoogleTTSService`.
+
+- Added a `flush_audio()` method to `FishTTSService` and `LmntTTSService`.
+
+- Added a `set_language` convenience method for `GoogleSTTService`, allowing
+  you to set a single language. This is in addition to the `set_languages`
+  method which allows you to set a list of languages.
+
+- Added `on_user_turn_audio_data` and `on_bot_turn_audio_data` to
+  `AudioBufferProcessor`. This gives the ability to grab the audio of only that
+  turn for both the user and the bot.
+
+- Added new base class `BaseObject` which is now the base class of
+  `FrameProcessor`, `PipelineRunner`, `PipelineTask` and `BaseTransport`. The
+  new `BaseObject` adds supports for event handlers.
+
+- Added support for a unified format for specifying function calling across all
+  LLM services.
+
+```python
+  weather_function = FunctionSchema(
+      name="get_current_weather",
+      description="Get the current weather",
+      properties={
+          "location": {
+              "type": "string",
+              "description": "The city and state, e.g. San Francisco, CA",
+          },
+          "format": {
+              "type": "string",
+              "enum": ["celsius", "fahrenheit"],
+              "description": "The temperature unit to use. Infer this from the user's location.",
+          },
+      },
+      required=["location"],
+  )
+  tools = ToolsSchema(standard_tools=[weather_function])
+```
+
+- Added `speech_threshold` parameter to `GladiaSTTService`.
+
+- Allow passing user (`user_kwargs`) and assistant (`assistant_kwargs`) context
+  aggregator parameters when using `create_context_aggregator()`. The values are
+  passed as a mapping that will then be converted to arguments.
+
+- Added `speed` as an `InputParam` for both `ElevenLabsTTSService` and
+  `ElevenLabsHttpTTSService`.
+
+- Added new `LLMFullResponseAggregator` to aggregate full LLM completions. At
+  every completion the `on_completion` event handler is triggered.
+
+- Added a new frame, `RTVIServerMessageFrame`, and RTVI message
+  `RTVIServerMessage` which provides a generic mechanism for sending custom
+  messages from server to client. The `RTVIServerMessageFrame` is processed by
+  the `RTVIObserver` and will be delivered to the client's `onServerMessage`
+  callback or `ServerMessage` event.
+
+- Added `GoogleLLMOpenAIBetaService` for Google LLM integration with an
+  OpenAI-compatible interface. Added foundational example
+  `14o-function-calling-gemini-openai-format.py`.
+
+- Added `AzureRealtimeBetaLLMService` to support Azure's OpeanAI Realtime API. Added
+  foundational example `19a-azure-realtime-beta.py`.
+
+### Changed
+
+- Updated the default mode for `CartesiaTTSService` and
+  `CartesiaHttpTTSService` to `sonic-2`.
+
+### Removed
+
+- Removed deprecated `audio.resample_audio()`, use `create_default_resampler()`
+  instead.
+
+- Removed deprecated`stt_service` parameter from `STTMuteFilter`.
+
+- Removed deprecated RTVI processors, use an `RTVIObserver` instead.
+
+- Removed deprecated `AWSTTSService`, use `PollyTTSService` instead.
+
+- Removed deprecated field `tier` from `DailyTranscriptionSettings`, use `model`
+  instead.
+
+- Removed deprecated `pipecat.vad` package, use `pipecat.audio.vad` instead.
+
+### Fixed
+
+- Fixed an issue in `RimeTTSService` where the last line of text sent didn't
+  result in an audio output being generated.
+
+### Other
+
+- Added a Pipecat Cloud deployment example to the `examples` directory.
+
+## [0.0.58] - 2025-02-26
+
+### Added
+
+- Added track-specific audio event `on_track_audio_data` to
+  `AudioBufferProcessor` for accessing separate input and output audio tracks.
+
+- Pipecat version will now be logged on every application startup. This will
+  help us identify what version we are running in case of any issues.
+
+- Added a new `StopFrame` which can be used to stop a pipeline task while
+  keeping the frame processors running. The frame processors could then be used
+  in a different pipeline. The difference between a `StopFrame` and a
+  `StopTaskFrame` is that, as with `EndFrame` and `EndTaskFrame`, the
+  `StopFrame` is pushed from the task and the `StopTaskFrame` is pushed upstream
+  inside the pipeline by any processor.
+
+- Added a new `PipelineTask` parameter `observers` that replaces the previous
+  `PipelineParams.observers`.
+
+- Added a new `PipelineTask` parameter `check_dangling_tasks` to enable or
+  disable checking for frame processors' dangling tasks when the Pipeline
+  finishes running.
+
+- Added new `on_completion_timeout` event for LLM services (all OpenAI-based
+  services, Anthropic and Google). Note that this event will only get triggered
+  if LLM timeouts are setup and if the timeout was reached. It can be useful to
+  retrigger another completion and see if the timeout was just a blip.
 
 - Added new log observers `LLMLogObserver` and `TranscriptionLogObserver` that
   can be useful for debugging your pipelines.
@@ -19,6 +157,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `exponential_backoff_time()` to `utils.network` module.
 
 ### Changed
+
+- ⚠️ `PipelineTask` now requires keyword arguments (except for the first one for
+  the pipeline).
+
+- Updated `PlayHTHttpTTSService` to take a `voice_engine` and `protocol` input
+  in the constructor. The previous method of providing a `voice_engine` input
+  that contains the engine and protocol is deprecated by PlayHT.
+
+- The base `TTSService` class now strips leading newlines before sending text
+  to the TTS provider. This change is to solve issues where some TTS providers,
+  like Azure, would not output text due to newlines.
+
+- `GrokLLMSService` now uses `grok-2` as the default model.
+
+- `AnthropicLLMService` now uses `claude-3-7-sonnet-20250219` as the default
+  model.
 
 - `RimeHttpTTSService` needs an `aiohttp.ClientSession` to be passed to the
   constructor as all the other HTTP-based services.
@@ -33,11 +187,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 stt = DeepgramSTTService(..., live_options=LiveOptions(model="nova-2-general"))
 ```
 
+### Deprecated
+
+- `PipelineParams.observers` is now deprecated, you the new `PipelineTask`
+  parameter `observers`.
+
 ### Removed
 
 - Remove `TransportParams.audio_out_is_live` since it was not being used at all.
 
 ### Fixed
+
+- Fixed a `GoogleLLMService` that was causing an exception when sending inline
+  audio in some cases.
+
+- Fixed an `AudioContextWordTTSService` issue that would cause an `EndFrame` to
+  disconnect from the TTS service before audio from all the contexts was
+  received. This affected services like Cartesia and Rime.
+
+- Fixed an issue that was not allowing to pass an `OpenAILLMContext` to create
+  `GoogleLLMService`'s context aggregators.
+
+- Fixed a `ElevenLabsTTSService`, `FishAudioTTSService`, `LMNTTTSService` and
+  `PlayHTTTSService` issue that was resulting in audio requested before an
+  interruption being played after an interruption.
 
 - Fixed `match_endofsentence` support for ellipses.
 
@@ -73,6 +246,9 @@ stt = DeepgramSTTService(..., live_options=LiveOptions(model="nova-2-general"))
 ### Other
 
 - Added Gemini support to `examples/phone-chatbot`.
+
+- Added foundational example `34-audio-recording.py` showing how to use the
+  AudioBufferProcessor callbacks to save merged and track recordings.
 
 ## [0.0.57] - 2025-02-14
 
