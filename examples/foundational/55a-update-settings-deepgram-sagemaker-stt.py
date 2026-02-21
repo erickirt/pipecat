@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from loguru import logger
 
 from pipecat.audio.vad.silero import SileroVADAnalyzer
-from pipecat.frames.frames import LLMRunFrame, TTSUpdateSettingsFrame
+from pipecat.frames.frames import LLMRunFrame, STTUpdateSettingsFrame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
@@ -22,9 +22,13 @@ from pipecat.processors.aggregators.llm_response_universal import (
 )
 from pipecat.runner.types import RunnerArguments
 from pipecat.runner.utils import create_transport
-from pipecat.services.deepgram.stt import DeepgramSTTService
+from pipecat.services.cartesia.tts import CartesiaTTSService
+from pipecat.services.deepgram.stt_sagemaker import (
+    DeepgramSageMakerSTTService,
+    DeepgramSageMakerSTTSettings,
+)
 from pipecat.services.openai.llm import OpenAILLMService
-from pipecat.services.rime.tts import RimeTTSService, RimeTTSSettings
+from pipecat.transcriptions.language import Language
 from pipecat.transports.base_transport import BaseTransport, TransportParams
 from pipecat.transports.daily.transport import DailyParams
 from pipecat.transports.websocket.fastapi import FastAPIWebsocketParams
@@ -50,11 +54,14 @@ transport_params = {
 async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
     logger.info(f"Starting bot")
 
-    stt = DeepgramSTTService(api_key=os.getenv("DEEPGRAM_API_KEY"))
+    stt = DeepgramSageMakerSTTService(
+        endpoint_name=os.getenv("SAGEMAKER_ENDPOINT_NAME", "my-deepgram-stt-endpoint"),
+        region=os.getenv("AWS_REGION", "us-east-2"),
+    )
 
-    tts = RimeTTSService(
-        api_key=os.getenv("RIME_API_KEY"),
-        voice_id="luna",
+    tts = CartesiaTTSService(
+        api_key=os.getenv("CARTESIA_API_KEY"),
+        voice_id="71a7ad14-091c-4e8e-a314-022ece01c121",  # British Reading Lady
     )
 
     llm = OpenAILLMService(api_key=os.getenv("OPENAI_API_KEY"))
@@ -100,8 +107,10 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         await task.queue_frames([LLMRunFrame()])
 
         await asyncio.sleep(10)
-        logger.info("Updating Rime TTS settings: voice=bond")
-        await task.queue_frame(TTSUpdateSettingsFrame(update=RimeTTSSettings(voice="bond")))
+        logger.info("Updating Deepgram SageMaker STT settings: language=es")
+        await task.queue_frame(
+            STTUpdateSettingsFrame(update=DeepgramSageMakerSTTSettings(language=Language.ES))
+        )
 
     @transport.event_handler("on_client_disconnected")
     async def on_client_disconnected(transport, client):

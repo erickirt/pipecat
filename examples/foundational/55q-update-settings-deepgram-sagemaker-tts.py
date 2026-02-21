@@ -23,8 +23,11 @@ from pipecat.processors.aggregators.llm_response_universal import (
 from pipecat.runner.types import RunnerArguments
 from pipecat.runner.utils import create_transport
 from pipecat.services.deepgram.stt import DeepgramSTTService
+from pipecat.services.deepgram.tts_sagemaker import (
+    DeepgramSageMakerTTSService,
+    DeepgramSageMakerTTSSettings,
+)
 from pipecat.services.openai.llm import OpenAILLMService
-from pipecat.services.rime.tts import RimeTTSService, RimeTTSSettings
 from pipecat.transports.base_transport import BaseTransport, TransportParams
 from pipecat.transports.daily.transport import DailyParams
 from pipecat.transports.websocket.fastapi import FastAPIWebsocketParams
@@ -52,9 +55,10 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
 
     stt = DeepgramSTTService(api_key=os.getenv("DEEPGRAM_API_KEY"))
 
-    tts = RimeTTSService(
-        api_key=os.getenv("RIME_API_KEY"),
-        voice_id="luna",
+    tts = DeepgramSageMakerTTSService(
+        endpoint_name=os.getenv("SAGEMAKER_ENDPOINT_NAME", "my-deepgram-tts-endpoint"),
+        region=os.getenv("AWS_REGION", "us-east-2"),
+        voice="aura-2-helena-en",
     )
 
     llm = OpenAILLMService(api_key=os.getenv("OPENAI_API_KEY"))
@@ -100,8 +104,16 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         await task.queue_frames([LLMRunFrame()])
 
         await asyncio.sleep(10)
-        logger.info("Updating Rime TTS settings: voice=bond")
-        await task.queue_frame(TTSUpdateSettingsFrame(update=RimeTTSSettings(voice="bond")))
+        logger.info('Updating Deepgram SageMaker TTS settings: voice="aura-2-aries-en"')
+        await task.queue_frame(
+            TTSUpdateSettingsFrame(update=DeepgramSageMakerTTSSettings(voice="aura-2-aries-en"))
+        )
+
+        await asyncio.sleep(10)
+        logger.info('Updating Deepgram SageMaker TTS settings: voice="aura-2-luna-en"')
+        await task.queue_frame(
+            TTSUpdateSettingsFrame(update=DeepgramSageMakerTTSSettings(voice="aura-2-luna-en"))
+        )
 
     @transport.event_handler("on_client_disconnected")
     async def on_client_disconnected(transport, client):
