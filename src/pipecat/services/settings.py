@@ -92,7 +92,13 @@ _S = TypeVar("_S", bound="ServiceSettings")
 
 @dataclass
 class ServiceSettings:
-    """Base class for service settings.
+    """Base class for runtime-updatable service settings.
+
+    These settings represent the subset of a service's configuration that can
+    be changed **while the pipeline is running** (e.g. switching the model or
+    changing the voice).  They are *not* meant to capture every constructor
+    parameter — only those that support live updates via
+    ``UpdateSettingsFrame``.
 
     Every AI service type (LLM, TTS, STT) extends this with its own fields.
     Fields default to ``NOT_GIVEN`` so that an instance can represent either
@@ -244,7 +250,9 @@ class ServiceSettings:
 
 @dataclass
 class LLMSettings(ServiceSettings):
-    """Settings for LLM services.
+    """Runtime-updatable settings for LLM services.
+
+    See ``ServiceSettings`` for the general concept.
 
     Parameters:
         model: LLM model identifier.
@@ -279,7 +287,9 @@ class LLMSettings(ServiceSettings):
 
 @dataclass
 class TTSSettings(ServiceSettings):
-    """Settings for TTS services.
+    """Runtime-updatable settings for TTS services.
+
+    See ``ServiceSettings`` for the general concept.
 
     Parameters:
         model: TTS model identifier.
@@ -302,7 +312,9 @@ class TTSSettings(ServiceSettings):
 
 @dataclass
 class STTSettings(ServiceSettings):
-    """Settings for STT services.
+    """Runtime-updatable settings for STT services.
+
+    See ``ServiceSettings`` for the general concept.
 
     Parameters:
         model: STT model identifier.
