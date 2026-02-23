@@ -56,8 +56,8 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
     stt = DeepgramSTTService(api_key=os.getenv("DEEPGRAM_API_KEY"))
 
     tts = DeepgramSageMakerTTSService(
-        endpoint_name=os.getenv("SAGEMAKER_ENDPOINT_NAME", "my-deepgram-tts-endpoint"),
-        region=os.getenv("AWS_REGION", "us-east-2"),
+        endpoint_name=os.getenv("SAGEMAKER_TTS_ENDPOINT_NAME"),
+        region=os.getenv("AWS_REGION"),
         voice="aura-2-helena-en",
     )
 

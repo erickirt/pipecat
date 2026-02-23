@@ -55,8 +55,8 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
     logger.info(f"Starting bot")
 
     stt = DeepgramSageMakerSTTService(
-        endpoint_name=os.getenv("SAGEMAKER_ENDPOINT_NAME", "my-deepgram-stt-endpoint"),
-        region=os.getenv("AWS_REGION", "us-east-2"),
+        endpoint_name=os.getenv("SAGEMAKER_STT_ENDPOINT_NAME"),
+        region=os.getenv("AWS_REGION"),
     )
 
     tts = CartesiaTTSService(
