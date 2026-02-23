@@ -98,11 +98,13 @@ class ServiceSettings:
     be changed **while the pipeline is running** (e.g. switching the model or
     changing the voice).  They are *not* meant to capture every constructor
     parameter — only those that support live updates via
-    ``UpdateSettingsFrame``.
+    ``*UpdateSettingsFrame``.
 
     Every AI service type (LLM, TTS, STT) extends this with its own fields.
     Fields default to ``NOT_GIVEN`` so that an instance can represent either
-    the full current state **or** a sparse update delta.
+    the full current state **or** a sparse update delta. Note that in the full
+    current state, **all fields will be given** (i.e. ``NOT_GIVEN`` is reserved
+    for update deltas).
 
     Parameters:
         model: The model identifier used by the service.
