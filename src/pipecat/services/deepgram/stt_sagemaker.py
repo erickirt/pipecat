@@ -204,8 +204,13 @@ class DeepgramSageMakerSTTService(STTService):
         elif "live_options" in changed and self._settings.live_options.language is not None:
             self._settings.language = self._settings.live_options.language
 
-        await self._disconnect()
-        await self._connect()
+        # TODO: someday we could reconnect here to apply updated settings.
+        # Code might look something like the below:
+        # await self._disconnect()
+        # await self._connect()
+
+        self._warn_unhandled_updated_settings(changed)
+
         return changed
 
     async def start(self, frame: StartFrame):

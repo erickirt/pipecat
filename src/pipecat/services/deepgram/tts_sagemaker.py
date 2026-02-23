@@ -228,14 +228,20 @@ class DeepgramSageMakerTTSService(TTSService):
         """
         changed = await super()._update_settings(update)
 
+        if not changed:
+            return changed
+
         # Deepgram uses voice as the model, so keep them in sync for metrics
         if "voice" in changed:
             self._settings.model = self._settings.voice
             self._sync_model_name_to_metrics()
 
-        if changed:
-            await self._disconnect()
-            await self._connect()
+        # TODO: someday we could reconnect here to apply updated settings.
+        # Code might look something like the below:
+        # await self._disconnect()
+        # await self._connect()
+
+        self._warn_unhandled_updated_settings(changed)
 
         return changed
 
