@@ -104,6 +104,14 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         logger.info("Updating ElevenLabs TTS settings: speed=0.7")
         await task.queue_frame(TTSUpdateSettingsFrame(update=ElevenLabsTTSSettings(speed=0.7)))
 
+        await asyncio.sleep(10)
+        logger.info("Updating ElevenLabs TTS settings: switching to a different voice")
+        await task.queue_frame(
+            TTSUpdateSettingsFrame(
+                update=ElevenLabsTTSSettings(voice=os.getenv("ELEVENLABS_VOICE_ID_ALT"))
+            )
+        )
+
     @transport.event_handler("on_client_disconnected")
     async def on_client_disconnected(transport, client):
         logger.info(f"Client disconnected")
