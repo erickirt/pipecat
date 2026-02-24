@@ -6,7 +6,8 @@
 
 """Deepgram speech-to-text service implementation."""
 
-from dataclasses import dataclass, field
+import inspect
+from dataclasses import dataclass, field, fields
 from typing import Any, AsyncGenerator, Dict, Optional
 
 from loguru import logger
@@ -24,7 +25,7 @@ from pipecat.frames.frames import (
     VADUserStoppedSpeakingFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection
-from pipecat.services.settings import NOT_GIVEN, STTSettings, _NotGiven, is_given
+from pipecat.services.settings import NOT_GIVEN, STTSettings, _NotGiven
 from pipecat.services.stt_latency import DEEPGRAM_TTFS_P99
 from pipecat.services.stt_service import STTService
 from pipecat.transcriptions.language import Language
@@ -51,11 +52,32 @@ except ModuleNotFoundError as e:
 class DeepgramSTTSettings(STTSettings):
     """Settings for the Deepgram STT service.
 
+    Some commonly used ``LiveOptions`` fields are declared as top-level
+    fields here so they can be updated individually via
+    ``STTUpdateSettingsFrame``.  Any *additional* ``LiveOptions`` fields
+    (e.g. ``filler_words``, ``diarize``, ``utterance_end_ms``) can be
+    passed through the ``extra`` dict — they will be forwarded to
+    ``LiveOptions`` when the WebSocket connection is (re)established.
+    This keeps the settings class future-proof: new Deepgram features work
+    without code changes on the Pipecat side.
+
     Parameters:
-        live_options: Deepgram ``LiveOptions`` for detailed configuration.
+        encoding: Audio encoding format (e.g. ``"linear16"``).
+        channels: Number of audio channels.
+        interim_results: Whether to return interim transcription results.
+        smart_format: Whether to enable Deepgram smart formatting.
+        punctuate: Whether to add punctuation to transcripts.
+        profanity_filter: Whether to filter profanity from transcripts.
+        vad_events: Whether to enable Deepgram VAD events (deprecated).
     """
 
-    live_options: LiveOptions | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    encoding: str | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    channels: int | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    interim_results: bool | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    smart_format: bool | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    punctuate: bool | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    profanity_filter: bool | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    vad_events: bool | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
 
 
 class DeepgramSTTService(STTService):
@@ -153,22 +175,29 @@ class DeepgramSTTService(STTService):
         if "language" in merged_options and isinstance(merged_options["language"], Language):
             merged_options["language"] = merged_options["language"].value
 
-        merged_live_options = LiveOptions(**merged_options)
+        settings_fields = {f.name for f in fields(DeepgramSTTSettings)}
+        settings_kwargs = {}
+        extra = {}
+        for key, value in merged_options.items():
+            if key in settings_fields:
+                settings_kwargs[key] = value
+            else:
+                extra[key] = value
+
+        settings = DeepgramSTTSettings(**settings_kwargs)
+        settings.extra = extra
+
         super().__init__(
             sample_rate=sample_rate,
             ttfs_p99_latency=ttfs_p99_latency,
-            settings=DeepgramSTTSettings(
-                model=merged_options.get("model"),
-                language=merged_options.get("language"),
-                live_options=merged_live_options,
-            ),
+            settings=settings,
             **kwargs,
         )
 
         self._addons = addons
         self._should_interrupt = should_interrupt
 
-        if merged_live_options.vad_events:
+        if self._settings.vad_events:
             import warnings
 
             with warnings.catch_warnings():
@@ -199,7 +228,7 @@ class DeepgramSTTService(STTService):
         Returns:
             True if VAD events are enabled in the current settings.
         """
-        return self._settings.live_options.vad_events
+        return self._settings.vad_events
 
     def can_generate_metrics(self) -> bool:
         """Check if this service can generate processing metrics.
@@ -210,42 +239,11 @@ class DeepgramSTTService(STTService):
         return True
 
     async def _update_settings(self, delta: STTSettings) -> dict[str, Any]:
-        """Apply a settings delta, keeping ``live_options`` in sync.
-
-        Top-level ``model`` and ``language`` are the source of truth.  When
-        they are given in *delta* their values are propagated into
-        ``live_options``.  When only ``live_options`` is given, its ``model``
-        and ``language`` are propagated *up* to the top-level fields.
-
-        Any change triggers a WebSocket reconnect.
-        """
-        # Determine which top-level fields are explicitly provided.
-        model_given = isinstance(delta, DeepgramSTTSettings) and is_given(
-            getattr(delta, "model", NOT_GIVEN)
-        )
-        language_given = isinstance(delta, DeepgramSTTSettings) and is_given(
-            getattr(delta, "language", NOT_GIVEN)
-        )
-
+        """Apply a settings delta and reconnect if anything changed."""
         changed = await super()._update_settings(delta)
 
         if not changed:
             return changed
-
-        # --- Sync model --------------------------------------------------
-        if model_given:
-            # Top-level model wins → push into live_options.
-            self._settings.live_options.model = self._settings.model
-        elif "live_options" in changed and self._settings.live_options.model is not None:
-            # Only live_options was given → pull model up.
-            self._settings.model = self._settings.live_options.model
-            self._sync_model_name_to_metrics()
-
-        # --- Sync language -----------------------------------------------
-        if language_given:
-            self._settings.live_options.language = self._settings.language
-        elif "live_options" in changed and self._settings.live_options.language is not None:
-            self._settings.language = self._settings.live_options.language
 
         await self._disconnect()
         await self._connect()
@@ -259,7 +257,6 @@ class DeepgramSTTService(STTService):
             frame: The start frame containing initialization parameters.
         """
         await super().start(frame)
-        self._settings.live_options.sample_rate = self.sample_rate
         await self._connect()
 
     async def stop(self, frame: EndFrame):
@@ -292,6 +289,36 @@ class DeepgramSTTService(STTService):
         await self._connection.send(audio)
         yield None
 
+    def _build_live_options(self) -> LiveOptions:
+        """Build a ``LiveOptions`` from flat settings fields, sample rate, and extras.
+
+        Returns:
+            A fully-populated ``LiveOptions`` ready for the Deepgram SDK.
+        """
+        valid_kwargs = set(inspect.signature(LiveOptions.__init__).parameters) - {"self"}
+
+        # Start with extras that are valid LiveOptions kwargs.
+        opts: dict[str, Any] = {k: v for k, v in self._settings.extra.items() if k in valid_kwargs}
+
+        # Override with flat settings fields (these take precedence).
+        s = self._settings
+        opts.update(
+            {
+                "model": s.model,
+                "language": s.language,
+                "encoding": s.encoding,
+                "channels": s.channels,
+                "interim_results": s.interim_results,
+                "smart_format": s.smart_format,
+                "punctuate": s.punctuate,
+                "profanity_filter": s.profanity_filter,
+                "vad_events": s.vad_events,
+                "sample_rate": self.sample_rate,
+            }
+        )
+
+        return LiveOptions(**opts)
+
     async def _connect(self):
         logger.debug("Connecting to Deepgram")
 
@@ -313,7 +340,7 @@ class DeepgramSTTService(STTService):
             )
 
         if not await self._connection.start(
-            options=self._settings.live_options, addons=self._addons
+            options=self._build_live_options(), addons=self._addons
         ):
             await self.push_error(error_msg=f"Unable to connect to Deepgram")
         else:

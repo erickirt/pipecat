@@ -106,6 +106,13 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
             STTUpdateSettingsFrame(delta=DeepgramSTTSettings(language=Language.ES))
         )
 
+        # Old-style dict update (for backward-compat testing):
+        # await asyncio.sleep(10)
+        # logger.info("Updating Deepgram STT settings via dict: punctuate=False, filler_words=True")
+        # await task.queue_frame(
+        #     STTUpdateSettingsFrame(settings={"punctuate": False, "filler_words": True})
+        # )
+
     @transport.event_handler("on_client_disconnected")
     async def on_client_disconnected(transport, client):
         logger.info(f"Client disconnected")
