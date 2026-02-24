@@ -384,12 +384,12 @@ class DeepgramFluxSTTService(WebsocketSTTService):
         """
         return True
 
-    async def _update_settings(self, update: DeepgramFluxSTTSettings) -> dict[str, Any]:
-        """Apply a settings update.
+    async def _update_settings(self, delta: DeepgramFluxSTTSettings) -> dict[str, Any]:
+        """Apply a settings delta.
 
         Settings are stored but not applied to the active connection.
         """
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
 
         if not changed:
             return changed

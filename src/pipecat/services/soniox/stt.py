@@ -225,25 +225,25 @@ class SonioxSTTService(WebsocketSTTService):
         await super().start(frame)
         await self._connect()
 
-    async def _update_settings(self, update: SonioxSTTSettings) -> dict[str, Any]:
-        """Apply a settings update, keeping ``input_params`` in sync.
+    async def _update_settings(self, delta: SonioxSTTSettings) -> dict[str, Any]:
+        """Apply a settings delta, keeping ``input_params`` in sync.
 
         Top-level ``model`` is the source of truth.  When it is given in
-        *update* its value is propagated into ``input_params``.  When only
+        *delta* its value is propagated into ``input_params``.  When only
         ``input_params`` is given, its ``model`` is propagated *up* to the
         top-level field.
 
         Settings are stored but not applied to the active connection.
 
         Args:
-            update: A settings delta.
+            delta: A settings delta.
 
         Returns:
             Dict mapping changed field names to their previous values.
         """
-        model_given = is_given(getattr(update, "model", NOT_GIVEN))
+        model_given = is_given(getattr(delta, "model", NOT_GIVEN))
 
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
 
         if not changed:
             return changed

@@ -107,7 +107,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
             await asyncio.sleep(10)
             logger.info("Updating ElevenLabs TTS settings: speed=0.7")
             await task.queue_frame(
-                TTSUpdateSettingsFrame(update=ElevenLabsHttpTTSSettings(speed=0.7))
+                TTSUpdateSettingsFrame(delta=ElevenLabsHttpTTSSettings(speed=0.7))
             )
 
         @transport.event_handler("on_client_disconnected")

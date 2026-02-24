@@ -280,7 +280,7 @@ class GladiaSTTService(WebsocketSTTService):
         self._region = region
         self._url = url
         self._receive_task = None
-        self._settings = GladiaSTTSettings(model=model, input_params=params)
+        self._settings = GladiaSTTSettings(model=model, language=None, input_params=params)
         self._sync_model_name_to_metrics()
 
         # Session management
@@ -379,18 +379,18 @@ class GladiaSTTService(WebsocketSTTService):
         await super().start(frame)
         await self._connect()
 
-    async def _update_settings(self, update: GladiaSTTSettings) -> dict[str, Any]:
-        """Apply settings update.
+    async def _update_settings(self, delta: GladiaSTTSettings) -> dict[str, Any]:
+        """Apply settings delta.
 
         Settings are stored but not applied to the active session.
 
         Args:
-            update: A settings delta.
+            delta: A settings delta.
 
         Returns:
             Dict mapping changed field names to their previous values.
         """
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
 
         if not changed:
             return changed

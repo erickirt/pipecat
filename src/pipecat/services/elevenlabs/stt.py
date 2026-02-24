@@ -302,19 +302,19 @@ class ElevenLabsSTTService(SegmentedSTTService):
         """
         return language_to_elevenlabs_language(language)
 
-    async def _update_settings(self, update: STTSettings) -> dict[str, Any]:
-        """Apply a settings update.
+    async def _update_settings(self, delta: STTSettings) -> dict[str, Any]:
+        """Apply a settings delta.
 
         Converts language to ElevenLabs format before applying and keeps
         ``_model_id`` in sync with the model setting.
 
         Args:
-            update: A :class:`STTSettings` (or ``ElevenLabsSTTSettings``) delta.
+            delta: A :class:`STTSettings` (or ``ElevenLabsSTTSettings``) delta.
 
         Returns:
             Dict mapping changed field names to their previous values.
         """
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
 
         if "model" in changed:
             self._model_id = self._settings.model
@@ -541,19 +541,19 @@ class ElevenLabsRealtimeSTTService(WebsocketSTTService):
         """
         return True
 
-    async def _update_settings(self, update: STTSettings) -> dict[str, Any]:
-        """Apply a settings update and reconnect if anything changed.
+    async def _update_settings(self, delta: STTSettings) -> dict[str, Any]:
+        """Apply a settings delta and reconnect if anything changed.
 
         Converts language to ElevenLabs format before applying and keeps
         ``_model_id`` in sync.
 
         Args:
-            update: A :class:`STTSettings` (or ``ElevenLabsRealtimeSTTSettings``) delta.
+            delta: A :class:`STTSettings` (or ``ElevenLabsRealtimeSTTSettings``) delta.
 
         Returns:
             Dict mapping changed field names to their previous values.
         """
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
 
         if not changed:
             return changed

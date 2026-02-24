@@ -102,7 +102,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         await asyncio.sleep(10)
         logger.info("Updating NVIDIA Segmented STT settings: profanity_filter=True")
         await task.queue_frame(
-            STTUpdateSettingsFrame(update=NvidiaSegmentedSTTSettings(profanity_filter=True))
+            STTUpdateSettingsFrame(delta=NvidiaSegmentedSTTSettings(profanity_filter=True))
         )
 
     @transport.event_handler("on_client_disconnected")

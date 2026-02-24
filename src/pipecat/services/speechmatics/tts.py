@@ -108,7 +108,9 @@ class SpeechmaticsTTSService(TTSService):
 
         params = params or SpeechmaticsTTSService.InputParams()
         self._settings = SpeechmaticsTTSSettings(
+            model=None,
             voice=voice_id,
+            language=None,
             max_retries=params.max_retries,
         )
 

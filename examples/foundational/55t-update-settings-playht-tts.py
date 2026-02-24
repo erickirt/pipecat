@@ -102,7 +102,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
 
         await asyncio.sleep(10)
         logger.info("Updating PlayHT TTS settings: speed=1.3")
-        await task.queue_frame(TTSUpdateSettingsFrame(update=PlayHTTTSSettings(speed=1.3)))
+        await task.queue_frame(TTSUpdateSettingsFrame(delta=PlayHTTTSSettings(speed=1.3)))
 
     @transport.event_handler("on_client_disconnected")
     async def on_client_disconnected(transport, client):

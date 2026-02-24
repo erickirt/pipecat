@@ -262,8 +262,8 @@ class STTService(AIService):
         await self._cancel_ttfb_timeout()
         await self._cancel_keepalive_task()
 
-    async def _update_settings(self, update: STTSettings) -> dict[str, Any]:
-        """Apply an STT settings update.
+    async def _update_settings(self, delta: STTSettings) -> dict[str, Any]:
+        """Apply an STT settings delta.
 
         Handles ``model`` (via parent). Translates ``Language`` enum values
         before applying so the stored value is a service-specific string.
@@ -272,18 +272,18 @@ class STTService(AIService):
         changed-field dict.
 
         Args:
-            update: An STT settings delta.
+            delta: An STT settings delta.
 
         Returns:
             Dict mapping changed field names to their previous values.
         """
         # Translate language *before* applying so the stored value is canonical
-        if is_given(update.language) and isinstance(update.language, Language):
-            converted = self.language_to_service_language(update.language)
+        if is_given(delta.language) and isinstance(delta.language, Language):
+            converted = self.language_to_service_language(delta.language)
             if converted is not None:
-                update.language = converted
+                delta.language = converted
 
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
         return changed
 
     async def process_audio_frame(self, frame: AudioRawFrame, direction: FrameDirection):
@@ -349,20 +349,20 @@ class STTService(AIService):
             await self._handle_vad_user_stopped_speaking(frame)
             await self.push_frame(frame, direction)
         elif isinstance(frame, STTUpdateSettingsFrame):
-            if frame.update is not None:
-                await self._update_settings(frame.update)
+            if frame.delta is not None:
+                await self._update_settings(frame.delta)
             elif frame.settings:
                 # Backward-compatible path: convert legacy dict to settings object.
                 with warnings.catch_warnings():
                     warnings.simplefilter("always")
                     warnings.warn(
                         "Passing a dict via STTUpdateSettingsFrame(settings={...}) is deprecated "
-                        "since 0.0.103, use STTUpdateSettingsFrame(update=STTSettings(...)) instead.",
+                        "since 0.0.103, use STTUpdateSettingsFrame(delta=STTSettings(...)) instead.",
                         DeprecationWarning,
                         stacklevel=2,
                     )
-                update = type(self._settings).from_mapping(frame.settings)
-                await self._update_settings(update)
+                delta = type(self._settings).from_mapping(frame.settings)
+                await self._update_settings(delta)
         elif isinstance(frame, STTMuteFrame):
             self._muted = frame.mute
             logger.debug(f"STT service {'muted' if frame.mute else 'unmuted'}")

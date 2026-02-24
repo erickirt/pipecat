@@ -107,7 +107,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         logger.info("Updating Cartesia HTTP TTS settings: speed increased to 1.5")
         await task.queue_frame(
             TTSUpdateSettingsFrame(
-                update=CartesiaTTSSettings(generation_config=GenerationConfig(speed=1.5))
+                delta=CartesiaTTSSettings(generation_config=GenerationConfig(speed=1.5))
             )
         )
 

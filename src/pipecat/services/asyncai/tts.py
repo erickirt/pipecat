@@ -176,12 +176,12 @@ class AsyncAITTSService(AudioContextTTSService):
         self._receive_task = None
         self._keepalive_task = None
 
-    async def _update_settings(self, update: TTSSettings) -> dict[str, Any]:
-        """Apply a settings update.
+    async def _update_settings(self, delta: TTSSettings) -> dict[str, Any]:
+        """Apply a settings delta.
 
         Settings are stored but not applied to the active connection.
         """
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
 
         if not changed:
             return changed

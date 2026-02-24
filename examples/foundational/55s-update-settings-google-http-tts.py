@@ -99,7 +99,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         await asyncio.sleep(10)
         logger.info("Updating Google HTTP TTS settings: speaking_rate=1.4")
         await task.queue_frame(
-            TTSUpdateSettingsFrame(update=GoogleHttpTTSSettings(speaking_rate=1.4))
+            TTSUpdateSettingsFrame(delta=GoogleHttpTTSSettings(speaking_rate=1.4))
         )
 
     @transport.event_handler("on_client_disconnected")

@@ -99,7 +99,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
 
         await asyncio.sleep(10)
         logger.info("Updating Camb TTS settings: language -> Spanish")
-        await task.queue_frame(TTSUpdateSettingsFrame(update=CambTTSSettings(language=Language.ES)))
+        await task.queue_frame(TTSUpdateSettingsFrame(delta=CambTTSSettings(language=Language.ES)))
 
     @transport.event_handler("on_client_disconnected")
     async def on_client_disconnected(transport, client):

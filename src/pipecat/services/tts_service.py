@@ -196,9 +196,7 @@ class TTSService(AIService):
         self._append_trailing_space: bool = append_trailing_space
         self._init_sample_rate = sample_rate
         self._sample_rate = 0
-        self._settings = TTSSettings(
-            voice=""
-        )  # Here in case subclass doesn't implement more specific settings (hopefully shouldn't happen)
+        self._settings = TTSSettings()  # Here in case subclass doesn't implement more specific settings (hopefully shouldn't happen)
         self._text_aggregator: BaseTextAggregator = text_aggregator or SimpleTextAggregator()
         if text_aggregator:
             import warnings
@@ -440,24 +438,24 @@ class TTSService(AIService):
             if not (agg_type == aggregation_type and func == transform_function)
         ]
 
-    async def _update_settings(self, update: TTSSettings) -> dict[str, Any]:
-        """Apply a TTS settings update.
+    async def _update_settings(self, delta: TTSSettings) -> dict[str, Any]:
+        """Apply a TTS settings delta.
 
         Translates language to service-specific value before applying.
 
         Args:
-            update: A TTS settings delta.
+            delta: A TTS settings delta.
 
         Returns:
             Dict mapping changed field names to their previous values.
         """
         # Translate language *before* applying so the stored value is canonical
-        if is_given(update.language) and isinstance(update.language, Language):
-            converted = self.language_to_service_language(update.language)
+        if is_given(delta.language) and isinstance(delta.language, Language):
+            converted = self.language_to_service_language(delta.language)
             if converted is not None:
-                update.language = converted
+                delta.language = converted
 
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
 
         return changed
 
@@ -548,20 +546,20 @@ class TTSService(AIService):
             await self.flush_audio()
             self._processing_text = processing_text
         elif isinstance(frame, TTSUpdateSettingsFrame):
-            if frame.update is not None:
-                await self._update_settings(frame.update)
+            if frame.delta is not None:
+                await self._update_settings(frame.delta)
             elif frame.settings:
                 # Backward-compatible path: convert legacy dict to settings object.
                 with warnings.catch_warnings():
                     warnings.simplefilter("always")
                     warnings.warn(
                         "Passing a dict via TTSUpdateSettingsFrame(settings={...}) is deprecated "
-                        "since 0.0.103, use TTSUpdateSettingsFrame(update=TTSSettings(...)) instead.",
+                        "since 0.0.103, use TTSUpdateSettingsFrame(delta=TTSSettings(...)) instead.",
                         DeprecationWarning,
                         stacklevel=2,
                     )
-                update = type(self._settings).from_mapping(frame.settings)
-                await self._update_settings(update)
+                delta = type(self._settings).from_mapping(frame.settings)
+                await self._update_settings(delta)
         elif isinstance(frame, BotStoppedSpeakingFrame):
             await self._maybe_resume_frame_processing()
             await self.push_frame(frame, direction)

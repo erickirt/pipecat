@@ -107,6 +107,7 @@ class DeepgramSageMakerTTSService(TTSService):
         self._settings = DeepgramSageMakerTTSSettings(
             model=voice,
             voice=voice,
+            language=None,
             encoding=encoding,
         )
         self._sync_model_name_to_metrics()
@@ -220,13 +221,13 @@ class DeepgramSageMakerTTSService(TTSService):
             logger.debug("Disconnected from Deepgram TTS on SageMaker")
             await self._call_event_handler("on_disconnected")
 
-    async def _update_settings(self, update: TTSSettings) -> dict[str, Any]:
-        """Apply a settings update and reconnect if necessary.
+    async def _update_settings(self, delta: TTSSettings) -> dict[str, Any]:
+        """Apply a settings delta and reconnect if necessary.
 
         Since all settings are part of the SageMaker session query string,
         any setting change requires reconnecting to apply the new values.
         """
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
 
         if not changed:
             return changed

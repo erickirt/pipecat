@@ -59,7 +59,7 @@ from pipecat.processors.aggregators.llm_response import (
 from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.ai_service import AIService
-from pipecat.services.settings import LLMSettings, is_given
+from pipecat.services.settings import LLMSettings
 from pipecat.turns.user_turn_completion_mixin import UserTurnCompletionLLMServiceMixin
 from pipecat.utils.context.llm_context_summarization import (
     LLMContextSummarizationUtil,
@@ -312,19 +312,21 @@ class LLMService(UserTurnCompletionLLMServiceMixin, AIService):
             await self._cancel_sequential_runner_task()
         await self._cancel_summary_task()
 
-    async def _update_settings(self, update: LLMSettings) -> dict[str, Any]:
-        """Apply a settings update, handling turn-completion fields.
+    async def _update_settings(self, delta: LLMSettings) -> dict[str, Any]:
+        """Apply a settings delta, handling turn-completion fields.
 
         Args:
-            update: An LLM settings delta.
+            delta: An LLM settings delta.
 
         Returns:
             Dict mapping changed field names to their previous values.
         """
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
 
         if "filter_incomplete_user_turns" in changed:
-            self._filter_incomplete_user_turns = self._settings.filter_incomplete_user_turns
+            self._filter_incomplete_user_turns = (
+                self._settings.filter_incomplete_user_turns or False
+            )
             logger.info(
                 f"{self}: Incomplete turn filtering "
                 f"{'enabled' if self._filter_incomplete_user_turns else 'disabled'}"
@@ -349,20 +351,20 @@ class LLMService(UserTurnCompletionLLMServiceMixin, AIService):
         elif isinstance(frame, LLMConfigureOutputFrame):
             self._skip_tts = frame.skip_tts
         elif isinstance(frame, LLMUpdateSettingsFrame):
-            if frame.update is not None:
-                await self._update_settings(frame.update)
+            if frame.delta is not None:
+                await self._update_settings(frame.delta)
             elif frame.settings:
                 # Backward-compatible path: convert legacy dict to settings object.
                 with warnings.catch_warnings():
                     warnings.simplefilter("always")
                     warnings.warn(
                         "Passing a dict via LLMUpdateSettingsFrame(settings={...}) is deprecated "
-                        "since 0.0.103, use LLMUpdateSettingsFrame(update=LLMSettings(...)) instead.",
+                        "since 0.0.103, use LLMUpdateSettingsFrame(delta=LLMSettings(...)) instead.",
                         DeprecationWarning,
                         stacklevel=2,
                     )
-                update = type(self._settings).from_mapping(frame.settings)
-                await self._update_settings(update)
+                delta = type(self._settings).from_mapping(frame.settings)
+                await self._update_settings(delta)
         elif isinstance(frame, LLMContextSummaryRequestFrame):
             await self._handle_summary_request(frame)
 

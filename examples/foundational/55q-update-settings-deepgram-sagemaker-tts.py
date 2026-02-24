@@ -106,13 +106,13 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         await asyncio.sleep(10)
         logger.info('Updating Deepgram SageMaker TTS settings: voice="aura-2-aries-en"')
         await task.queue_frame(
-            TTSUpdateSettingsFrame(update=DeepgramSageMakerTTSSettings(voice="aura-2-aries-en"))
+            TTSUpdateSettingsFrame(delta=DeepgramSageMakerTTSSettings(voice="aura-2-aries-en"))
         )
 
         await asyncio.sleep(10)
         logger.info('Updating Deepgram SageMaker TTS settings: voice="aura-2-luna-en"')
         await task.queue_frame(
-            TTSUpdateSettingsFrame(update=DeepgramSageMakerTTSSettings(voice="aura-2-luna-en"))
+            TTSUpdateSettingsFrame(delta=DeepgramSageMakerTTSSettings(voice="aura-2-luna-en"))
         )
 
     @transport.event_handler("on_client_disconnected")

@@ -105,7 +105,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
             await asyncio.sleep(10)
             logger.info('Updating MiniMax TTS settings: speed=1.5, emotion="happy"')
             await task.queue_frame(
-                TTSUpdateSettingsFrame(update=MiniMaxTTSSettings(speed=1.5, emotion="happy"))
+                TTSUpdateSettingsFrame(delta=MiniMaxTTSSettings(speed=1.5, emotion="happy"))
             )
 
         @transport.event_handler("on_client_disconnected")

@@ -608,6 +608,7 @@ class GoogleHttpTTSService(TTSService):
 
         self._location = location
         self._settings = GoogleHttpTTSSettings(
+            model=None,
             pitch=params.pitch,
             rate=params.rate,
             speaking_rate=params.speaking_rate,
@@ -688,20 +689,20 @@ class GoogleHttpTTSService(TTSService):
         """
         return language_to_google_tts_language(language)
 
-    async def _update_settings(self, update: TTSSettings) -> dict[str, Any]:
+    async def _update_settings(self, delta: TTSSettings) -> dict[str, Any]:
         """Override to handle speaking_rate validation.
 
         Args:
-            update: Settings delta. Can include 'speaking_rate' (float).
+            delta: Settings delta. Can include 'speaking_rate' (float).
         """
-        if isinstance(update, GoogleHttpTTSSettings) and is_given(update.speaking_rate):
-            rate_value = float(update.speaking_rate)
+        if isinstance(delta, GoogleHttpTTSSettings) and is_given(delta.speaking_rate):
+            rate_value = float(delta.speaking_rate)
             if not (0.25 <= rate_value <= 2.0):
                 logger.warning(
                     f"Invalid speaking_rate value: {rate_value}. Must be between 0.25 and 2.0"
                 )
-                update.speaking_rate = NOT_GIVEN
-        return await super()._update_settings(update)
+                delta.speaking_rate = NOT_GIVEN
+        return await super()._update_settings(delta)
 
     def _construct_ssml(self, text: str) -> str:
         ssml = "<speak>"
@@ -1021,6 +1022,7 @@ class GoogleTTSService(GoogleBaseTTSService):
 
         self._location = location
         self._settings = GoogleStreamTTSSettings(
+            model=None,
             language=self.language_to_service_language(params.language)
             if params.language
             else "en-US",
@@ -1032,20 +1034,20 @@ class GoogleTTSService(GoogleBaseTTSService):
             credentials, credentials_path
         )
 
-    async def _update_settings(self, update: TTSSettings) -> dict[str, Any]:
+    async def _update_settings(self, delta: TTSSettings) -> dict[str, Any]:
         """Override to handle speaking_rate validation.
 
         Args:
-            update: Settings delta. Can include 'speaking_rate' (float).
+            delta: Settings delta. Can include 'speaking_rate' (float).
         """
-        if isinstance(update, GoogleStreamTTSSettings) and is_given(update.speaking_rate):
-            rate_value = float(update.speaking_rate)
+        if isinstance(delta, GoogleStreamTTSSettings) and is_given(delta.speaking_rate):
+            rate_value = float(delta.speaking_rate)
             if not (0.25 <= rate_value <= 2.0):
                 logger.warning(
                     f"Invalid speaking_rate value: {rate_value}. Must be between 0.25 and 2.0"
                 )
-                update.speaking_rate = NOT_GIVEN
-        return await super()._update_settings(update)
+                delta.speaking_rate = NOT_GIVEN
+        return await super()._update_settings(delta)
 
     @traced_tts
     async def run_tts(self, text: str, context_id: str) -> AsyncGenerator[Frame, None]:
@@ -1230,6 +1232,7 @@ class GeminiTTSService(GoogleBaseTTSService):
         self._location = location
         self._model = model
         self._settings = GeminiTTSSettings(
+            model=None,
             language=self.language_to_service_language(params.language)
             if params.language
             else "en-US",
@@ -1267,19 +1270,19 @@ class GeminiTTSService(GoogleBaseTTSService):
                 f"Current rate of {self.sample_rate}Hz may cause issues."
             )
 
-    async def _update_settings(self, update: TTSSettings) -> dict[str, Any]:
-        """Apply a settings update with voice validation.
+    async def _update_settings(self, delta: TTSSettings) -> dict[str, Any]:
+        """Apply a settings delta with voice validation.
 
         Args:
-            update: Settings delta. Can include 'voice', 'prompt', etc.
+            delta: Settings delta. Can include 'voice', 'prompt', etc.
 
         Returns:
             Dict mapping changed field names to their previous values.
         """
-        if is_given(update.voice) and update.voice not in self.AVAILABLE_VOICES:
-            logger.warning(f"Voice '{update.voice}' not in known voices list. Using anyway.")
+        if is_given(delta.voice) and delta.voice not in self.AVAILABLE_VOICES:
+            logger.warning(f"Voice '{delta.voice}' not in known voices list. Using anyway.")
 
-        return await super()._update_settings(update)
+        return await super()._update_settings(delta)
 
     @traced_tts
     async def run_tts(self, text: str, context_id: str) -> AsyncGenerator[Frame, None]:

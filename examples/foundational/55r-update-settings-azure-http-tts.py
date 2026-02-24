@@ -102,7 +102,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         await asyncio.sleep(10)
         logger.info('Updating Azure TTS settings: rate="0.7", style="sad"')
         await task.queue_frame(
-            TTSUpdateSettingsFrame(update=AzureTTSSettings(rate="0.7", style="sad"))
+            TTSUpdateSettingsFrame(delta=AzureTTSSettings(rate="0.7", style="sad"))
         )
 
     @transport.event_handler("on_client_disconnected")

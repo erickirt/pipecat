@@ -26,7 +26,7 @@ from pipecat.frames.frames import (
     TTSStartedFrame,
     TTSStoppedFrame,
 )
-from pipecat.services.settings import NOT_GIVEN, TTSSettings, _NotGiven, is_given
+from pipecat.services.settings import NOT_GIVEN, TTSSettings, _NotGiven
 from pipecat.services.tts_service import TTSService
 from pipecat.transcriptions.language import Language, resolve_language
 from pipecat.utils.tracing.service_decorators import traced_tts
@@ -240,13 +240,19 @@ class MiniMaxHttpTTSService(TTSService):
         self._settings = MiniMaxTTSSettings(
             model=model,
             voice=voice_id,
+            language=None,
             stream=True,
             speed=params.speed,
             volume=params.volume,
             pitch=params.pitch,
+            language_boost=None,
+            emotion=None,
+            text_normalization=None,
+            latex_read=None,
             audio_bitrate=128000,
             audio_format="pcm",
             audio_channel=1,
+            audio_sample_rate=0,
         )
         self._sync_model_name_to_metrics()
 
@@ -351,11 +357,11 @@ class MiniMaxHttpTTSService(TTSService):
             "vol": self._settings.volume,
             "pitch": self._settings.pitch,
         }
-        if is_given(self._settings.emotion):
+        if self._settings.emotion is not None:
             voice_setting["emotion"] = self._settings.emotion
-        if is_given(self._settings.text_normalization):
+        if self._settings.text_normalization is not None:
             voice_setting["text_normalization"] = self._settings.text_normalization
-        if is_given(self._settings.latex_read):
+        if self._settings.latex_read is not None:
             voice_setting["latex_read"] = self._settings.latex_read
 
         # Build audio_setting dict for API
@@ -374,7 +380,7 @@ class MiniMaxHttpTTSService(TTSService):
             "model": self._settings.model,
             "text": text,
         }
-        if is_given(self._settings.language_boost):
+        if self._settings.language_boost is not None:
             payload["language_boost"] = self._settings.language_boost
 
         try:

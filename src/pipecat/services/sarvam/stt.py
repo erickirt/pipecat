@@ -274,8 +274,8 @@ class SarvamSTTService(STTService):
         self._settings = SarvamSTTSettings(
             model=model,
             language=params.language,
-            prompt=params.prompt if params.prompt is not None else NOT_GIVEN,
-            mode=mode if mode is not None else NOT_GIVEN,
+            prompt=params.prompt,
+            mode=mode,
             vad_signals=params.vad_signals,
             high_vad_sensitivity=params.high_vad_sensitivity,
         )
@@ -329,11 +329,11 @@ class SarvamSTTService(STTService):
                 if self._socket_client:
                     await self._socket_client.flush()
 
-    async def _update_settings(self, update: STTSettings) -> dict[str, Any]:
-        """Apply a settings update, validate, sync state, and reconnect.
+    async def _update_settings(self, delta: STTSettings) -> dict[str, Any]:
+        """Apply a settings delta, validate, sync state, and reconnect.
 
         Args:
-            update: A :class:`STTSettings` (or ``SarvamSTTSettings``) delta.
+            delta: A :class:`STTSettings` (or ``SarvamSTTSettings``) delta.
 
         Returns:
             Dict mapping changed field names to their previous values.
@@ -342,26 +342,26 @@ class SarvamSTTService(STTService):
             ValueError: If a setting is not supported by the current model.
         """
         # Validate against model capabilities before applying
-        if is_given(update.language) and update.language is not None:
+        if is_given(delta.language) and delta.language is not None:
             if not self._config.supports_language:
                 raise ValueError(
                     f"Model '{self._settings.model}' does not support language parameter "
                     "(auto-detects language)."
                 )
 
-        if isinstance(update, SarvamSTTSettings):
-            if is_given(update.prompt) and update.prompt is not None:
+        if isinstance(delta, SarvamSTTSettings):
+            if is_given(delta.prompt) and delta.prompt is not None:
                 if not self._config.supports_prompt:
                     raise ValueError(
                         f"Model '{self._settings.model}' does not support prompt parameter."
                     )
-            if is_given(update.mode) and update.mode is not None:
+            if is_given(delta.mode) and delta.mode is not None:
                 if not self._config.supports_mode:
                     raise ValueError(
                         f"Model '{self._settings.model}' does not support mode parameter."
                     )
 
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
 
         # TODO: someday we could reconnect here to apply updated settings.
         # Code might look something like the below:
@@ -510,16 +510,12 @@ class SarvamSTTService(STTService):
                 connect_kwargs["language_code"] = language_string
 
             # Add mode for models that support it
-            if self._config.supports_mode and is_given(self._settings.mode):
+            if self._config.supports_mode and self._settings.mode is not None:
                 connect_kwargs["mode"] = self._settings.mode
 
             # Prompt support differs across sarvamai versions. Prefer connect-time prompt
             # when available and gracefully degrade if the SDK doesn't accept it.
-            if (
-                is_given(self._settings.prompt)
-                and self._settings.prompt is not None
-                and self._config.supports_prompt
-            ):
+            if self._settings.prompt is not None and self._config.supports_prompt:
                 connect_kwargs["prompt"] = self._settings.prompt
 
             def _connect_with_sdk_headers(connect_fn, **kwargs):
@@ -561,11 +557,7 @@ class SarvamSTTService(STTService):
             self._socket_client = await self._websocket_context.__aenter__()
 
             # Fallback for SDKs that support runtime prompt updates.
-            if (
-                is_given(self._settings.prompt)
-                and self._settings.prompt is not None
-                and self._config.supports_prompt
-            ):
+            if self._settings.prompt is not None and self._config.supports_prompt:
                 prompt_setter = getattr(self._socket_client, "set_prompt", None)
                 if callable(prompt_setter):
                     await prompt_setter(self._settings.prompt)

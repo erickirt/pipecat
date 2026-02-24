@@ -101,7 +101,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
 
         await asyncio.sleep(10)
         logger.info("Updating Google LLM settings: temperature=0.1")
-        await task.queue_frame(LLMUpdateSettingsFrame(update=GoogleLLMSettings(temperature=0.1)))
+        await task.queue_frame(LLMUpdateSettingsFrame(delta=GoogleLLMSettings(temperature=0.1)))
 
     @transport.event_handler("on_client_disconnected")
     async def on_client_disconnected(transport, client):

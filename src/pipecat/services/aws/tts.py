@@ -209,6 +209,7 @@ class AWSPollyTTSService(TTSService):
 
         self._aws_session = aioboto3.Session()
         self._settings = AWSPollyTTSSettings(
+            model=None,
             voice=voice_id,
             engine=params.engine,
             language=self.language_to_service_language(params.language)

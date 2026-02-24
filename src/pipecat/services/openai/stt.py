@@ -35,7 +35,7 @@ from pipecat.frames.frames import (
     VADUserStoppedSpeakingFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection
-from pipecat.services.settings import NOT_GIVEN, STTSettings, _NotGiven, is_given
+from pipecat.services.settings import NOT_GIVEN, STTSettings, _NotGiven
 from pipecat.services.stt_latency import OPENAI_REALTIME_TTFS_P99, OPENAI_TTFS_P99
 from pipecat.services.stt_service import WebsocketSTTService
 from pipecat.services.whisper.base_stt import BaseWhisperSTTService, Transcription
@@ -268,19 +268,19 @@ class OpenAIRealtimeSTTService(WebsocketSTTService):
         """
         return True
 
-    async def _update_settings(self, update: STTSettings) -> dict[str, Any]:
-        """Apply a settings update and send session update if needed.
+    async def _update_settings(self, delta: STTSettings) -> dict[str, Any]:
+        """Apply a settings delta and send session update if needed.
 
         Keeps ``_language_code`` and ``_prompt`` in sync with settings
         and sends a ``session.update`` to the server when the session is active.
 
         Args:
-            update: A :class:`STTSettings` (or ``OpenAIRealtimeSTTSettings``) delta.
+            delta: A :class:`STTSettings` (or ``OpenAIRealtimeSTTSettings``) delta.
 
         Returns:
             Dict mapping changed field names to their previous values.
         """
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
 
         if not changed:
             return changed

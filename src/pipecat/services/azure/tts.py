@@ -156,6 +156,7 @@ class AzureBaseTTSService:
         params = params or AzureBaseTTSService.InputParams()
 
         self._settings = AzureTTSSettings(
+            model=None,
             emphasis=params.emphasis,
             language=self.language_to_service_language(params.language)
             if params.language

@@ -112,13 +112,13 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         await asyncio.sleep(10)
         logger.info("Updating Ultravox Realtime LLM settings: output_medium=text")
         await task.queue_frame(
-            LLMUpdateSettingsFrame(update=UltravoxRealtimeLLMSettings(output_medium="text"))
+            LLMUpdateSettingsFrame(delta=UltravoxRealtimeLLMSettings(output_medium="text"))
         )
 
         await asyncio.sleep(10)
         logger.info("Updating Ultravox Realtime LLM settings: output_medium=voice")
         await task.queue_frame(
-            LLMUpdateSettingsFrame(update=UltravoxRealtimeLLMSettings(output_medium="voice"))
+            LLMUpdateSettingsFrame(delta=UltravoxRealtimeLLMSettings(output_medium="voice"))
         )
 
     @transport.event_handler("on_client_disconnected")

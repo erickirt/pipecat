@@ -28,7 +28,7 @@ from pipecat.frames.frames import (
     VADUserStoppedSpeakingFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection
-from pipecat.services.settings import NOT_GIVEN, STTSettings, _NotGiven, is_given
+from pipecat.services.settings import NOT_GIVEN, STTSettings, _NotGiven
 from pipecat.services.stt_latency import GRADIUM_TTFS_P99
 from pipecat.services.stt_service import WebsocketSTTService
 from pipecat.transcriptions.language import Language, resolve_language
@@ -148,8 +148,9 @@ class GradiumSTTService(WebsocketSTTService):
         params = params or GradiumSTTService.InputParams()
 
         self._settings = GradiumSTTSettings(
+            model=None,
             language=params.language,
-            delay_in_frames=params.delay_in_frames if params.delay_in_frames else NOT_GIVEN,
+            delay_in_frames=params.delay_in_frames or None,
         )
 
         self._receive_task = None
@@ -171,16 +172,16 @@ class GradiumSTTService(WebsocketSTTService):
         """
         return True
 
-    async def _update_settings(self, update: STTSettings) -> dict[str, Any]:
-        """Apply a settings update, sync params, and reconnect.
+    async def _update_settings(self, delta: STTSettings) -> dict[str, Any]:
+        """Apply a settings delta, sync params, and reconnect.
 
         Args:
-            update: A :class:`STTSettings` (or ``GradiumSTTSettings``) delta.
+            delta: A :class:`STTSettings` (or ``GradiumSTTSettings``) delta.
 
         Returns:
             Dict mapping changed field names to their previous values.
         """
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
         if not changed:
             return changed
 
@@ -326,11 +327,11 @@ class GradiumSTTService(WebsocketSTTService):
             json_config = {}
             if self._json_config:
                 json_config = json.loads(self._json_config)
-            if is_given(self._settings.language) and self._settings.language:
+            if self._settings.language:
                 gradium_language = language_to_gradium_language(self._settings.language)
                 if gradium_language:
                     json_config["language"] = gradium_language
-            if is_given(self._settings.delay_in_frames) and self._settings.delay_in_frames:
+            if self._settings.delay_in_frames:
                 json_config["delay_in_frames"] = self._settings.delay_in_frames
             if json_config:
                 setup_msg["json_config"] = json_config

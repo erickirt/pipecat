@@ -34,7 +34,7 @@ from pipecat.frames.frames import (
     TTSStoppedFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection
-from pipecat.services.settings import NOT_GIVEN, TTSSettings, _NotGiven, is_given
+from pipecat.services.settings import NOT_GIVEN, TTSSettings, _NotGiven
 from pipecat.services.tts_service import InterruptibleTTSService, TTSService
 from pipecat.transcriptions.language import Language, resolve_language
 from pipecat.utils.tracing.service_decorators import traced_tts
@@ -204,6 +204,7 @@ class PlayHTTTSService(InterruptibleTTSService):
             voice_engine=voice_engine,
             speed=params.speed,
             seed=params.seed,
+            playht_sample_rate=0,
         )
         self._sync_model_name_to_metrics()
 
@@ -215,12 +216,12 @@ class PlayHTTTSService(InterruptibleTTSService):
         """
         return True
 
-    async def _update_settings(self, update: TTSSettings) -> dict[str, Any]:
-        """Apply a settings update.
+    async def _update_settings(self, delta: TTSSettings) -> dict[str, Any]:
+        """Apply a settings delta.
 
         Settings are stored but not applied to the active connection.
         """
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
 
         if not changed:
             return changed
@@ -569,6 +570,7 @@ class PlayHTHttpTTSService(TTSService):
             voice_engine=voice_engine,
             speed=params.speed,
             seed=params.seed,
+            playht_sample_rate=0,
         )
         self._sync_model_name_to_metrics()
 

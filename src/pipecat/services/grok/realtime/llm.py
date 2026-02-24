@@ -151,6 +151,16 @@ class GrokRealtimeLLMService(LLMService):
         self.base_url = base_url
 
         self._settings = GrokRealtimeLLMSettings(
+            model=None,
+            temperature=None,
+            max_tokens=None,
+            top_p=None,
+            top_k=None,
+            frequency_penalty=None,
+            presence_penalty=None,
+            seed=None,
+            filter_incomplete_user_turns=False,
+            user_turn_completion_config=None,
             session_properties=session_properties or events.SessionProperties(),
         )
 
@@ -358,9 +368,9 @@ class GrokRealtimeLLMService(LLMService):
         """
         # Backward-compatible dict path: frame.settings contains SessionProperties
         # fields, not our Settings fields, so we construct SessionProperties
-        # directly. The frame.update path falls through to super, which calls
+        # directly. The frame.delta path falls through to super, which calls
         # _update_settings → our override handles the rest.
-        if isinstance(frame, LLMUpdateSettingsFrame) and frame.update is None:
+        if isinstance(frame, LLMUpdateSettingsFrame) and frame.delta is None:
             self._settings.session_properties = events.SessionProperties(**frame.settings)
             await self._send_session_update()
             await self.push_frame(frame, direction)
@@ -463,13 +473,13 @@ class GrokRealtimeLLMService(LLMService):
                 return
             await self.push_error(error_msg=f"Error sending client event: {e}", exception=e)
 
-    async def _update_settings(self, update):
-        """Apply a settings update, sending a session update if needed."""
+    async def _update_settings(self, delta):
+        """Apply a settings delta, sending a session update if needed."""
         # Capture current sample rates before the update replaces them.
         input_rate = self._get_configured_sample_rate("input")
         output_rate = self._get_configured_sample_rate("output")
 
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
 
         if "session_properties" in changed:
             if input_rate and output_rate:

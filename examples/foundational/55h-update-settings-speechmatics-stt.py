@@ -110,13 +110,13 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         await asyncio.sleep(10)
         logger.info("Updating Speechmatics STT settings: language=es")
         await task.queue_frame(
-            STTUpdateSettingsFrame(update=SpeechmaticsSTTSettings(language=Language.ES))
+            STTUpdateSettingsFrame(delta=SpeechmaticsSTTSettings(language=Language.ES))
         )
 
         await asyncio.sleep(10)
         logger.info("Updating Speechmatics STT settings: focus_speakers=['S1']")
         await task.queue_frame(
-            STTUpdateSettingsFrame(update=SpeechmaticsSTTSettings(focus_speakers=["S1"]))
+            STTUpdateSettingsFrame(delta=SpeechmaticsSTTSettings(focus_speakers=["S1"]))
         )
 
         await asyncio.sleep(10)
@@ -125,7 +125,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         )
         await task.queue_frame(
             STTUpdateSettingsFrame(
-                update=SpeechmaticsSTTSettings(
+                delta=SpeechmaticsSTTSettings(
                     speaker_active_format="<SPEAKER_{speaker_id}>{text}</SPEAKER_{speaker_id}>"
                 )
             )

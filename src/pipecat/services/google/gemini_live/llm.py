@@ -750,6 +750,9 @@ class GeminiLiveLLMService(LLMService):
             temperature=params.temperature,
             top_k=params.top_k,
             top_p=params.top_p,
+            seed=None,
+            filter_incomplete_user_turns=False,
+            user_turn_completion_config=None,
             modalities=params.modalities,
             language=self._language_code,
             media_resolution=params.media_resolution,
@@ -806,12 +809,12 @@ class GeminiLiveLLMService(LLMService):
         """
         return True
 
-    async def _update_settings(self, update: LLMSettings) -> dict[str, Any]:
-        """Apply a settings update.
+    async def _update_settings(self, delta: LLMSettings) -> dict[str, Any]:
+        """Apply a settings delta.
 
         Settings are stored but not applied to the active connection.
         """
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
 
         if not changed:
             return changed

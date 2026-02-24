@@ -62,7 +62,7 @@ from pipecat.frames.frames import (
 )
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.sarvam._sdk import sdk_headers
-from pipecat.services.settings import NOT_GIVEN, TTSSettings, _NotGiven, is_given
+from pipecat.services.settings import NOT_GIVEN, TTSSettings, _NotGiven
 from pipecat.services.tts_service import InterruptibleTTSService, TTSService
 from pipecat.transcriptions.language import Language, resolve_language
 from pipecat.utils.tracing.service_decorators import traced_tts
@@ -486,6 +486,9 @@ class SarvamHttpTTSService(TTSService):
                 True if self._config.preprocessing_always_enabled else params.enable_preprocessing
             ),
             pace=pace,
+            pitch=None,
+            loudness=None,
+            temperature=None,
             model=model,
             voice=voice_id,
         )
@@ -559,19 +562,19 @@ class SarvamHttpTTSService(TTSService):
                 "sample_rate": self.sample_rate,
                 "enable_preprocessing": self._settings.enable_preprocessing,
                 "model": self._settings.model,
-                "pace": self._settings.pace if is_given(self._settings.pace) else 1.0,
+                "pace": self._settings.pace if self._settings.pace is not None else 1.0,
             }
 
             # Add model-specific parameters based on config
             if self._config.supports_pitch:
-                payload["pitch"] = self._settings.pitch if is_given(self._settings.pitch) else 0.0
+                payload["pitch"] = self._settings.pitch if self._settings.pitch is not None else 0.0
             if self._config.supports_loudness:
                 payload["loudness"] = (
-                    self._settings.loudness if is_given(self._settings.loudness) else 1.0
+                    self._settings.loudness if self._settings.loudness is not None else 1.0
                 )
             if self._config.supports_temperature:
                 payload["temperature"] = (
-                    self._settings.temperature if is_given(self._settings.temperature) else 0.6
+                    self._settings.temperature if self._settings.temperature is not None else 0.6
                 )
 
             headers = {
@@ -849,6 +852,9 @@ class SarvamTTSService(InterruptibleTTSService):
             output_audio_codec=params.output_audio_codec,
             output_audio_bitrate=params.output_audio_bitrate,
             pace=pace,
+            pitch=None,
+            loudness=None,
+            temperature=None,
             model=model,
             voice=voice_id,
         )
@@ -949,9 +955,9 @@ class SarvamTTSService(InterruptibleTTSService):
         if isinstance(frame, (LLMFullResponseEndFrame, EndFrame)):
             await self.flush_audio()
 
-    async def _update_settings(self, update: TTSSettings) -> dict[str, Any]:
-        """Apply a settings update and resend config if voice changed."""
-        changed = await super()._update_settings(update)
+    async def _update_settings(self, delta: TTSSettings) -> dict[str, Any]:
+        """Apply a settings delta and resend config if voice changed."""
+        changed = await super()._update_settings(delta)
 
         if changed:
             await self._send_config()
@@ -1027,11 +1033,11 @@ class SarvamTTSService(InterruptibleTTSService):
             "pace": self._settings.pace,
             "model": self._settings.model,
         }
-        if is_given(self._settings.pitch):
+        if self._settings.pitch is not None:
             config_data["pitch"] = self._settings.pitch
-        if is_given(self._settings.loudness):
+        if self._settings.loudness is not None:
             config_data["loudness"] = self._settings.loudness
-        if is_given(self._settings.temperature):
+        if self._settings.temperature is not None:
             config_data["temperature"] = self._settings.temperature
         logger.debug(f"Config being sent is {config_data}")
         config_message = {"type": "config", "data": config_data}

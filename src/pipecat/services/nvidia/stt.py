@@ -579,16 +579,16 @@ class NvidiaSegmentedSTTService(SegmentedSTTService):
         self._config = self._create_recognition_config()
         logger.debug(f"Initialized NvidiaSegmentedSTTService with model: {self._settings.model}")
 
-    async def _update_settings(self, update: STTSettings) -> dict[str, Any]:
-        """Apply a settings update and sync internal state.
+    async def _update_settings(self, delta: STTSettings) -> dict[str, Any]:
+        """Apply a settings delta and sync internal state.
 
         Args:
-            update: A :class:`STTSettings` (or ``NvidiaSegmentedSTTSettings``) delta.
+            delta: A :class:`STTSettings` (or ``NvidiaSegmentedSTTSettings``) delta.
 
         Returns:
             Dict mapping changed field names to their previous values.
         """
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
 
         if changed:
             self._config = self._create_recognition_config()

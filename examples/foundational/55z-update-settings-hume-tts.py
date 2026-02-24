@@ -103,7 +103,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         logger.info('Updating Hume TTS settings: speed=2.0, description="Speak with excitement"')
         await task.queue_frame(
             TTSUpdateSettingsFrame(
-                update=HumeTTSSettings(speed=2.0, description="Speak with excitement")
+                delta=HumeTTSSettings(speed=2.0, description="Speak with excitement")
             )
         )
 

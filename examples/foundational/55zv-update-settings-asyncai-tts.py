@@ -103,7 +103,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         await asyncio.sleep(10)
         logger.info("Updating AsyncAI TTS settings: language=es")
         await task.queue_frame(
-            TTSUpdateSettingsFrame(update=AsyncAITTSSettings(language=Language.ES))
+            TTSUpdateSettingsFrame(delta=AsyncAITTSSettings(language=Language.ES))
         )
 
     @transport.event_handler("on_client_disconnected")

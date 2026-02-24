@@ -44,7 +44,7 @@ from pipecat.frames.frames import (
     TTSStoppedFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection
-from pipecat.services.settings import NOT_GIVEN, TTSSettings, _NotGiven, is_given
+from pipecat.services.settings import NOT_GIVEN, TTSSettings, _NotGiven
 from pipecat.services.tts_service import (
     AudioContextTTSService,
     TTSService,
@@ -166,7 +166,7 @@ def build_elevenlabs_voice_settings(
         val = (
             getattr(settings, key, None) if isinstance(settings, TTSSettings) else settings.get(key)
         )
-        if val is not None and is_given(val):
+        if val is not None:
             voice_settings[key] = val
 
     return voice_settings or None
@@ -470,24 +470,24 @@ class ElevenLabsTTSService(AudioContextTTSService):
         voice_settings = {}
         for key in voice_setting_keys:
             val = getattr(ts, key, None)
-            if val is not None and is_given(val):
+            if val is not None:
                 voice_settings[key] = val
         return voice_settings or None
 
-    async def _update_settings(self, update: TTSSettings) -> dict[str, Any]:
-        """Apply a settings update, reconnecting as needed.
+    async def _update_settings(self, delta: TTSSettings) -> dict[str, Any]:
+        """Apply a settings delta, reconnecting as needed.
 
         Uses the declarative ``URL_FIELDS`` and ``VOICE_SETTINGS_FIELDS``
         sets on :class:`ElevenLabsTTSSettings` to decide whether to
         reconnect the WebSocket or close the current audio context.
 
         Args:
-            update: A :class:`TTSSettings` (or ``ElevenLabsTTSSettings``) delta.
+            delta: A :class:`TTSSettings` (or ``ElevenLabsTTSSettings``) delta.
 
         Returns:
             Dict mapping changed field names to their previous values.
         """
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
 
         if not changed:
             return changed
@@ -967,16 +967,16 @@ class ElevenLabsHttpTTSService(TTSService):
     def _set_voice_settings(self):
         return build_elevenlabs_voice_settings(self._settings)
 
-    async def _update_settings(self, update: TTSSettings) -> dict[str, Any]:
-        """Apply a settings update and rebuild voice settings.
+    async def _update_settings(self, delta: TTSSettings) -> dict[str, Any]:
+        """Apply a settings delta and rebuild voice settings.
 
         Args:
-            update: A :class:`TTSSettings` (or ``ElevenLabsHttpTTSSettings``) delta.
+            delta: A :class:`TTSSettings` (or ``ElevenLabsHttpTTSSettings``) delta.
 
         Returns:
             Dict mapping changed field names to their previous values.
         """
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
         if changed:
             self._voice_settings = self._set_voice_settings()
         return changed
@@ -1116,10 +1116,7 @@ class ElevenLabsHttpTTSService(TTSService):
                 locator.model_dump() for locator in self._pronunciation_dictionary_locators
             ]
 
-        if (
-            is_given(self._settings.apply_text_normalization)
-            and self._settings.apply_text_normalization is not None
-        ):
+        if self._settings.apply_text_normalization is not None:
             payload["apply_text_normalization"] = self._settings.apply_text_normalization
 
         language = self._settings.language
@@ -1140,10 +1137,7 @@ class ElevenLabsHttpTTSService(TTSService):
         params = {
             "output_format": self._output_format,
         }
-        if (
-            is_given(self._settings.optimize_streaming_latency)
-            and self._settings.optimize_streaming_latency is not None
-        ):
+        if self._settings.optimize_streaming_latency is not None:
             params["optimize_streaming_latency"] = self._settings.optimize_streaming_latency
 
         try:

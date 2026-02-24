@@ -114,6 +114,7 @@ class XTTSService(TTSService):
         super().__init__(sample_rate=sample_rate, **kwargs)
 
         self._settings = XTTSTTSSettings(
+            model=None,
             voice=voice_id,
             language=self.language_to_service_language(language),
             base_url=base_url,

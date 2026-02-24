@@ -105,9 +105,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
 
         await asyncio.sleep(10)
         logger.info("Updating Azure STT settings: language=es")
-        await task.queue_frame(
-            STTUpdateSettingsFrame(update=AzureSTTSettings(language=Language.ES))
-        )
+        await task.queue_frame(STTUpdateSettingsFrame(delta=AzureSTTSettings(language=Language.ES)))
 
     @transport.event_handler("on_client_disconnected")
     async def on_client_disconnected(transport, client):

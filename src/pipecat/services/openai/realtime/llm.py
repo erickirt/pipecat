@@ -178,6 +178,15 @@ class OpenAIRealtimeLLMService(LLMService):
 
         self._settings = OpenAIRealtimeLLMSettings(
             model=model,
+            temperature=None,
+            max_tokens=None,
+            top_p=None,
+            top_k=None,
+            frequency_penalty=None,
+            presence_penalty=None,
+            seed=None,
+            filter_incomplete_user_turns=False,
+            user_turn_completion_config=None,
             session_properties=session_properties or events.SessionProperties(),
         )
         self._sync_model_name_to_metrics()
@@ -415,9 +424,9 @@ class OpenAIRealtimeLLMService(LLMService):
         """
         # Backward-compatible dict path: frame.settings contains SessionProperties
         # fields, not our Settings fields, so we construct SessionProperties
-        # directly. The frame.update path falls through to super, which calls
+        # directly. The frame.delta path falls through to super, which calls
         # _update_settings → our override handles the rest.
-        if isinstance(frame, LLMUpdateSettingsFrame) and frame.update is None:
+        if isinstance(frame, LLMUpdateSettingsFrame) and frame.delta is None:
             self._settings.session_properties = events.SessionProperties(**frame.settings)
             await self._send_session_update()
             await self.push_frame(frame, direction)
@@ -536,9 +545,9 @@ class OpenAIRealtimeLLMService(LLMService):
             # treat a send-side error as fatal.
             await self.push_error(error_msg=f"Error sending client event: {e}", exception=e)
 
-    async def _update_settings(self, update):
-        """Apply a settings update, sending a session update if needed."""
-        changed = await super()._update_settings(update)
+    async def _update_settings(self, delta):
+        """Apply a settings delta, sending a session update if needed."""
+        changed = await super()._update_settings(delta)
         if "session_properties" in changed:
             await self._send_session_update()
         self._warn_unhandled_updated_settings(changed.keys() - {"session_properties"})

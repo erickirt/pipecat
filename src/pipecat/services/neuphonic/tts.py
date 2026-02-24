@@ -147,6 +147,7 @@ class NeuphonicTTSService(InterruptibleTTSService):
         self._api_key = api_key
         self._url = url
         self._settings = NeuphonicTTSSettings(
+            model=None,
             language=self.language_to_service_language(params.language),
             speed=params.speed,
             encoding=encoding,
@@ -179,9 +180,9 @@ class NeuphonicTTSService(InterruptibleTTSService):
         """
         return language_to_neuphonic_lang_code(language)
 
-    async def _update_settings(self, update: TTSSettings) -> dict[str, Any]:
-        """Apply a settings update and reconnect with new configuration."""
-        changed = await super()._update_settings(update)
+    async def _update_settings(self, delta: TTSSettings) -> dict[str, Any]:
+        """Apply a settings delta and reconnect with new configuration."""
+        changed = await super()._update_settings(delta)
         if changed:
             await self._disconnect()
             await self._connect()
@@ -450,6 +451,7 @@ class NeuphonicHttpTTSService(TTSService):
         self._session = aiohttp_session
         self._base_url = url.rstrip("/")
         self._settings = NeuphonicTTSSettings(
+            model=None,
             voice=voice_id,
             language=self.language_to_service_language(params.language) or "en",
             speed=params.speed,

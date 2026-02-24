@@ -105,6 +105,7 @@ class GradiumTTSService(AudioContextTTSService):
         self._settings = GradiumTTSSettings(
             model=model,
             voice=voice_id,
+            language=None,
             output_format="pcm",
         )
 
@@ -119,16 +120,16 @@ class GradiumTTSService(AudioContextTTSService):
         """
         return True
 
-    async def _update_settings(self, update: TTSSettings) -> dict[str, Any]:
-        """Apply a settings update and reconnect if voice changed.
+    async def _update_settings(self, delta: TTSSettings) -> dict[str, Any]:
+        """Apply a settings delta and reconnect if voice changed.
 
         Args:
-            update: A :class:`TTSSettings` (or ``GradiumTTSSettings``) delta.
+            delta: A :class:`TTSSettings` (or ``GradiumTTSSettings``) delta.
 
         Returns:
             Dict mapping changed field names to their previous values.
         """
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
         if "voice" in changed:
             await self._disconnect()
             await self._connect()
