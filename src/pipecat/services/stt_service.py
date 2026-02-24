@@ -127,6 +127,7 @@ class STTService(AIService):
         self._user_speaking: bool = False
         self._finalize_pending: bool = False
         self._finalize_requested: bool = False
+        self._last_transcript_time: float = 0
 
         # Keepalive state
         self._keepalive_timeout = keepalive_timeout
@@ -385,6 +386,9 @@ class STTService(AIService):
             direction: The direction to push the frame.
         """
         if isinstance(frame, TranscriptionFrame):
+            # Store the transcript time for TTFB calculation
+            self._last_transcript_time = time.time()
+
             # Set finalized from pending state and auto-reset
             if self._finalize_pending:
                 frame.finalized = True
@@ -438,6 +442,7 @@ class STTService(AIService):
         self._user_speaking = True
         self._finalize_requested = False
         self._finalize_pending = False
+        self._last_transcript_time = 0
 
     async def _handle_vad_user_stopped_speaking(self, frame: VADUserStoppedSpeakingFrame):
         """Handle VAD user stopped speaking frame.
@@ -467,14 +472,17 @@ class STTService(AIService):
         )
 
     async def _ttfb_timeout_handler(self):
-        """Wait for timeout then report TTFB.
+        """Wait for timeout then report TTFB using the last transcript timestamp.
 
         This timeout allows the final transcription to arrive before we calculate
-        and report TTFB. If no transcription arrived, no TTFB is reported.
+        and report TTFB. Uses _last_transcript_time as the end time so we measure
+        to when the transcript actually arrived, not when the timeout fired.
+        If no transcription arrived, no TTFB is reported.
         """
         try:
             await asyncio.sleep(self._stt_ttfb_timeout)
-            await self.stop_ttfb_metrics()
+            if self._last_transcript_time > 0:
+                await self.stop_ttfb_metrics(end_time=self._last_transcript_time)
         except asyncio.CancelledError:
             # Task was cancelled (new utterance or interruption), which is expected behavior
             pass
