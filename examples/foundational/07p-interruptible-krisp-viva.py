@@ -31,6 +31,8 @@ from pipecat.audio.filters.krisp_viva_filter import KrispVivaFilter
 from pipecat.audio.turn.krisp_viva_turn import KrispVivaTurn
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.frames.frames import LLMRunFrame
+from pipecat.metrics.metrics import TurnMetricsData
+from pipecat.observers.loggers.metrics_log_observer import MetricsLogObserver
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
@@ -124,6 +126,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
             enable_usage_metrics=True,
         ),
         idle_timeout_secs=runner_args.pipeline_idle_timeout_secs,
+        observers=[MetricsLogObserver(include_metrics={TurnMetricsData})],
     )
 
     @transport.event_handler("on_client_connected")
