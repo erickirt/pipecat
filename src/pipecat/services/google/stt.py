@@ -368,7 +368,7 @@ class GoogleSTTSettings(STTSettings):
         language_codes: List of Google STT language code strings
             (e.g. ``["en-US"]``).
 
-            .. deprecated:: 0.0.103
+            .. deprecated:: 0.0.104
                 Use ``languages`` instead. If both are provided, ``languages``
                 takes precedence. This field is here just for backward
                 compatibility with dict-based settings updates.

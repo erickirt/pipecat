@@ -184,7 +184,7 @@ class STTService(AIService):
     async def set_model(self, model: str):
         """Set the speech recognition model.
 
-        .. deprecated:: 0.0.103
+        .. deprecated:: 0.0.104
             Use ``STTUpdateSettingsFrame(model=...)`` instead.
 
         Args:
@@ -204,7 +204,7 @@ class STTService(AIService):
     async def set_language(self, language: Language):
         """Set the language for speech recognition.
 
-        .. deprecated:: 0.0.103
+        .. deprecated:: 0.0.104
             Use ``STTUpdateSettingsFrame(language=...)`` instead.
 
         Args:
@@ -357,7 +357,7 @@ class STTService(AIService):
                     warnings.simplefilter("always")
                     warnings.warn(
                         "Passing a dict via STTUpdateSettingsFrame(settings={...}) is deprecated "
-                        "since 0.0.103, use STTUpdateSettingsFrame(delta=STTSettings(...)) instead.",
+                        "since 0.0.104, use STTUpdateSettingsFrame(delta=STTSettings(...)) instead.",
                         DeprecationWarning,
                         stacklevel=2,
                     )

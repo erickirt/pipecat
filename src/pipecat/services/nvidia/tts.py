@@ -125,7 +125,7 @@ class NvidiaTTSService(TTSService):
     async def set_model(self, model: str):
         """Set the TTS model.
 
-        .. deprecated:: 0.0.103
+        .. deprecated:: 0.0.104
             Model cannot be changed after initialization for NVIDIA Riva TTS.
             Set model and function id in the constructor instead, e.g.::
 

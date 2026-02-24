@@ -275,7 +275,7 @@ class TTSService(AIService):
     async def set_model(self, model: str):
         """Set the TTS model to use.
 
-        .. deprecated:: 0.0.103
+        .. deprecated:: 0.0.104
             Use ``TTSUpdateSettingsFrame(model=...)`` instead.
 
         Args:
@@ -295,7 +295,7 @@ class TTSService(AIService):
     async def set_voice(self, voice: str):
         """Set the voice for speech synthesis.
 
-        .. deprecated:: 0.0.103
+        .. deprecated:: 0.0.104
             Use ``TTSUpdateSettingsFrame(voice=...)`` instead.
 
         Args:
@@ -554,7 +554,7 @@ class TTSService(AIService):
                     warnings.simplefilter("always")
                     warnings.warn(
                         "Passing a dict via TTSUpdateSettingsFrame(settings={...}) is deprecated "
-                        "since 0.0.103, use TTSUpdateSettingsFrame(delta=TTSSettings(...)) instead.",
+                        "since 0.0.104, use TTSUpdateSettingsFrame(delta=TTSSettings(...)) instead.",
                         DeprecationWarning,
                         stacklevel=2,
                     )

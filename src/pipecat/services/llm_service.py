@@ -359,7 +359,7 @@ class LLMService(UserTurnCompletionLLMServiceMixin, AIService):
                     warnings.simplefilter("always")
                     warnings.warn(
                         "Passing a dict via LLMUpdateSettingsFrame(settings={...}) is deprecated "
-                        "since 0.0.103, use LLMUpdateSettingsFrame(delta=LLMSettings(...)) instead.",
+                        "since 0.0.104, use LLMUpdateSettingsFrame(delta=LLMSettings(...)) instead.",
                         DeprecationWarning,
                         stacklevel=2,
                     )

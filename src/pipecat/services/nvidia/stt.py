@@ -241,7 +241,7 @@ class NvidiaSTTService(STTService):
     async def set_model(self, model: str):
         """Set the ASR model for transcription.
 
-        .. deprecated:: 0.0.103
+        .. deprecated:: 0.0.104
             Model cannot be changed after initialization for NVIDIA Riva streaming STT.
             Set model and function id in the constructor instead, e.g.::
 

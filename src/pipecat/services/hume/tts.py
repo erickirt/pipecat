@@ -210,7 +210,7 @@ class HumeTTSService(TTSService):
     async def update_setting(self, key: str, value: Any) -> None:
         """Runtime updates via key/value pair.
 
-        .. deprecated:: 0.0.103
+        .. deprecated:: 0.0.104
             Use ``TTSUpdateSettingsFrame(delta=HumeTTSSettings(...))`` instead.
 
         Args:

@@ -2127,7 +2127,7 @@ class ServiceUpdateSettingsFrame(ControlFrame):
     Parameters:
         settings: Dictionary of setting name to value mappings.
 
-            .. deprecated:: 0.0.103
+            .. deprecated:: 0.0.104
                 Use ``delta`` with a typed settings object instead.
 
         delta: :class:`~pipecat.services.settings.ServiceSettings` delta-mode
