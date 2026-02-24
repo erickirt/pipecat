@@ -42,7 +42,7 @@ import base64
 import json
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
+from typing import Any, AsyncGenerator, ClassVar, Dict, List, Optional, Tuple
 
 import aiohttp
 from loguru import logger
@@ -280,7 +280,8 @@ class SarvamTTSSettings(TTSSettings):
     """Settings for Sarvam WebSocket TTS service.
 
     Parameters:
-        target_language_code: Sarvam language code.
+        language: Sarvam language code (e.g. ``"hi-IN"``).  Uses the standard
+            ``TTSSettings.language`` field.
         speech_sample_rate: Audio sample rate as string.
         enable_preprocessing: Enable text preprocessing. Defaults to False.
             **Note:** Always enabled for bulbul:v3-beta.
@@ -304,7 +305,8 @@ class SarvamTTSSettings(TTSSettings):
             **Note:** Only supported for bulbul:v3-beta. Ignored for v2.
     """
 
-    target_language_code: str | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    _aliases: ClassVar[Dict[str, str]] = {"target_language_code": "language"}
+
     speech_sample_rate: str | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
     enable_preprocessing: bool | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
     min_buffer_size: int | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
@@ -840,7 +842,7 @@ class SarvamTTSService(InterruptibleTTSService):
 
         # Build base settings
         self._settings = SarvamTTSSettings(
-            target_language_code=(
+            language=(
                 self.language_to_service_language(params.language) if params.language else "en-IN"
             ),
             speech_sample_rate=str(sample_rate),
@@ -1022,7 +1024,7 @@ class SarvamTTSService(InterruptibleTTSService):
             raise Exception("WebSocket not connected")
         # Build config dict for the API
         config_data = {
-            "target_language_code": self._settings.target_language_code,
+            "target_language_code": self._settings.language,
             "speaker": self._settings.voice,
             "speech_sample_rate": self._settings.speech_sample_rate,
             "enable_preprocessing": self._settings.enable_preprocessing,
