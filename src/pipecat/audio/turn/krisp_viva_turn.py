@@ -331,6 +331,9 @@ class KrispVivaTurn(BaseTurnAnalyzer):
         """
         # For real-time processing, the state is determined in append_audio
         # Return the last state that was computed
+        logger.debug(
+            f"Krisp turn analysis: state={self._last_state}, probability={self._last_probability}"
+        )
         return self._last_state, None
 
     def clear(self):
