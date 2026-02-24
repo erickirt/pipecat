@@ -55,6 +55,22 @@ Looking for help debugging your pipeline and processors? Check out [Whisker](htt
 
 Love terminal applications? Check out [Tail](https://github.com/pipecat-ai/tail), a terminal dashboard for Pipecat.
 
+### 🤖 Claude Code Skills
+
+Use [Pipecat Skills](https://github.com/pipecat-ai/skills) with [Claude Code](https://claude.ai/code) to scaffold projects, generate changelogs, deploy to Pipecat Cloud, and more. Install the marketplace with:
+
+```
+claude plugin marketplace add pipecat-ai/skills
+```
+
+And install the plugins, for example:
+
+```
+claude plugin install pipecat-dev@pipecat-skills
+```
+
+there's more!
+
 ### 📺️ Pipecat TV Channel
 
 Catch new features, interviews, and how-tos on our [Pipecat TV](https://www.youtube.com/playlist?list=PLzU2zoMTQIHjqC3v4q2XVSR3hGSzwKFwH) channel.
