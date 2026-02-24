@@ -208,6 +208,14 @@ class SonioxSTTService(WebsocketSTTService):
 
         self._receive_task = None
 
+    def can_generate_metrics(self) -> bool:
+        """Check if this service can generate processing metrics.
+
+        Returns:
+            True, as Soniox STT supports metrics generation.
+        """
+        return True
+
     async def start(self, frame: StartFrame):
         """Start the Soniox STT websocket connection.
 
@@ -293,10 +301,8 @@ class SonioxSTTService(WebsocketSTTService):
         Yields:
             Frame: None (transcription results come via WebSocket callbacks).
         """
-        await self.start_processing_metrics()
         if self._websocket and self._websocket.state is State.OPEN:
             await self._websocket.send(audio)
-        await self.stop_processing_metrics()
 
         yield None
 
@@ -477,6 +483,8 @@ class SonioxSTTService(WebsocketSTTService):
                             # the rest will be sent as interim tokens (even final tokens).
                             await send_endpoint_transcript()
                         else:
+                            if not self._final_transcription_buffer:
+                                await self.start_processing_metrics()
                             self._final_transcription_buffer.append(token)
                     else:
                         non_final_transcription.append(token)
