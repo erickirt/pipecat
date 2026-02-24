@@ -126,6 +126,14 @@ class AWSTranscribeSTTService(WebsocketSTTService):
 
         self._receive_task = None
 
+    def can_generate_metrics(self) -> bool:
+        """Check if this service can generate processing metrics.
+
+        Returns:
+            True, as AWS Transcribe STT supports metrics generation.
+        """
+        return True
+
     def get_service_encoding(self, encoding: str) -> str:
         """Convert internal encoding format to AWS Transcribe format.
 

@@ -208,6 +208,14 @@ class SonioxSTTService(WebsocketSTTService):
 
         self._receive_task = None
 
+    def can_generate_metrics(self) -> bool:
+        """Check if this service can generate processing metrics.
+
+        Returns:
+            True, as Soniox STT supports metrics generation.
+        """
+        return True
+
     async def start(self, frame: StartFrame):
         """Start the Soniox STT websocket connection.
 
