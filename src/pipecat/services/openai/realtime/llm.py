@@ -121,7 +121,7 @@ class OpenAIRealtimeLLMService(LLMService):
         self,
         *,
         api_key: str,
-        model: str = "gpt-realtime",
+        model: str = "gpt-realtime-1.5",
         base_url: str = "wss://api.openai.com/v1/realtime",
         session_properties: Optional[events.SessionProperties] = None,
         start_audio_paused: bool = False,
