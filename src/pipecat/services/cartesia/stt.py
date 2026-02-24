@@ -294,16 +294,16 @@ class CartesiaSTTService(WebsocketSTTService):
 
         await self._disconnect_websocket()
 
-    async def _update_settings(self, update: STTSettings) -> dict[str, Any]:
-        """Apply a settings update.
+    async def _update_settings(self, delta: STTSettings) -> dict[str, Any]:
+        """Apply a settings delta.
 
         Args:
-            update: A :class:`STTSettings` (or ``CartesiaSTTSettings``) delta.
+            delta: A :class:`STTSettings` (or ``CartesiaSTTSettings``) delta.
 
         Returns:
             Dict mapping changed field names to their previous values.
         """
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
 
         # TODO: someday we could reconnect here to apply updated settings.
         # Code might look something like the below:

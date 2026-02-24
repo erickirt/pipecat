@@ -104,7 +104,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
             await asyncio.sleep(10)
             logger.info('Updating Speechmatics TTS settings: voice="theo"')
             await task.queue_frame(
-                TTSUpdateSettingsFrame(update=SpeechmaticsTTSSettings(voice="theo"))
+                TTSUpdateSettingsFrame(delta=SpeechmaticsTTSSettings(voice="theo"))
             )
 
         @transport.event_handler("on_client_disconnected")

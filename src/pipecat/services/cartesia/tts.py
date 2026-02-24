@@ -28,7 +28,7 @@ from pipecat.frames.frames import (
     TTSStoppedFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection
-from pipecat.services.settings import NOT_GIVEN, TTSSettings, _NotGiven, is_given
+from pipecat.services.settings import NOT_GIVEN, TTSSettings, _NotGiven
 from pipecat.services.tts_service import AudioContextTTSService, TTSService
 from pipecat.transcriptions.language import Language, resolve_language
 from pipecat.utils.text.base_text_aggregator import BaseTextAggregator
@@ -443,7 +443,7 @@ class CartesiaTTSService(AudioContextTTSService):
         voice_config["mode"] = "id"
         voice_config["id"] = self._settings.voice
 
-        if is_given(self._settings.emotion) and self._settings.emotion:
+        if self._settings.emotion:
             with warnings.catch_warnings():
                 warnings.simplefilter("always")
                 warnings.warn(
@@ -469,18 +469,18 @@ class CartesiaTTSService(AudioContextTTSService):
             "use_original_timestamps": False if self._settings.model == "sonic" else True,
         }
 
-        if is_given(self._settings.language) and self._settings.language:
+        if self._settings.language:
             msg["language"] = self._settings.language
 
-        if is_given(self._settings.speed) and self._settings.speed:
+        if self._settings.speed:
             msg["speed"] = self._settings.speed
 
-        if is_given(self._settings.generation_config) and self._settings.generation_config:
+        if self._settings.generation_config:
             msg["generation_config"] = self._settings.generation_config.model_dump(
                 exclude_none=True
             )
 
-        if is_given(self._settings.pronunciation_dict_id) and self._settings.pronunciation_dict_id:
+        if self._settings.pronunciation_dict_id:
             msg["pronunciation_dict_id"] = self._settings.pronunciation_dict_id
 
         return json.dumps(msg)
@@ -811,7 +811,7 @@ class CartesiaHttpTTSService(TTSService):
         try:
             voice_config = {"mode": "id", "id": self._settings.voice}
 
-            if is_given(self._settings.emotion) and self._settings.emotion:
+            if self._settings.emotion:
                 with warnings.catch_warnings():
                     warnings.simplefilter("always")
                     warnings.warn(
@@ -836,21 +836,18 @@ class CartesiaHttpTTSService(TTSService):
                 "output_format": output_format,
             }
 
-            if is_given(self._settings.language) and self._settings.language:
+            if self._settings.language:
                 payload["language"] = self._settings.language
 
-            if is_given(self._settings.speed) and self._settings.speed:
+            if self._settings.speed:
                 payload["speed"] = self._settings.speed
 
-            if is_given(self._settings.generation_config) and self._settings.generation_config:
+            if self._settings.generation_config:
                 payload["generation_config"] = self._settings.generation_config.model_dump(
                     exclude_none=True
                 )
 
-            if (
-                is_given(self._settings.pronunciation_dict_id)
-                and self._settings.pronunciation_dict_id
-            ):
+            if self._settings.pronunciation_dict_id:
                 payload["pronunciation_dict_id"] = self._settings.pronunciation_dict_id
 
             yield TTSStartedFrame(context_id=context_id)

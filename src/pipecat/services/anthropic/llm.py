@@ -254,6 +254,11 @@ class AnthropicLLMService(LLMService):
             temperature=params.temperature,
             top_k=params.top_k,
             top_p=params.top_p,
+            frequency_penalty=None,
+            presence_penalty=None,
+            seed=None,
+            filter_incomplete_user_turns=False,
+            user_turn_completion_config=None,
             thinking=params.thinking,
             extra=params.extra if isinstance(params.extra, dict) else {},
         )

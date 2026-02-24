@@ -103,7 +103,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         await asyncio.sleep(10)
         logger.info('Updating Gradium TTS settings: voice="LFZvm12tW_z0xfGo"')
         await task.queue_frame(
-            TTSUpdateSettingsFrame(update=GradiumTTSSettings(voice="LFZvm12tW_z0xfGo"))
+            TTSUpdateSettingsFrame(delta=GradiumTTSSettings(voice="LFZvm12tW_z0xfGo"))
         )
 
     @transport.event_handler("on_client_disconnected")

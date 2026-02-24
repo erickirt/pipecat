@@ -29,7 +29,7 @@ from pipecat import version as pipecat_version
 USER_AGENT = f"pipecat/{pipecat_version()}"
 from pydantic import BaseModel
 
-from pipecat.services.settings import NOT_GIVEN, TTSSettings, _NotGiven, is_given
+from pipecat.services.settings import NOT_GIVEN, TTSSettings, _NotGiven
 
 try:
     from websockets.asyncio.client import connect as websocket_connect
@@ -173,16 +173,15 @@ class InworldHttpTTSService(TTSService):
         self._settings = InworldTTSSettings(
             model=model,
             voice=voice_id,
+            language=None,
             audio_encoding=encoding,
             audio_sample_rate=0,
+            speaking_rate=params.speaking_rate,
+            temperature=params.temperature,
+            timestamp_transport_strategy=params.timestamp_transport_strategy,
+            auto_mode=None,  # Not applicable for HTTP TTS
+            apply_text_normalization=None,  # Not applicable for HTTP TTS
         )
-
-        if params.temperature is not None:
-            self._settings.temperature = params.temperature
-        if params.speaking_rate is not None:
-            self._settings.speaking_rate = params.speaking_rate
-        if params.timestamp_transport_strategy is not None:
-            self._settings.timestamp_transport_strategy = params.timestamp_transport_strategy
 
         self._cumulative_time = 0.0
 
@@ -286,7 +285,7 @@ class InworldHttpTTSService(TTSService):
             "audioEncoding": self._settings.audio_encoding,
             "sampleRateHertz": self._settings.audio_sample_rate,
         }
-        if is_given(self._settings.speaking_rate):
+        if self._settings.speaking_rate is not None:
             audio_config["speakingRate"] = self._settings.speaking_rate
 
         payload = {
@@ -296,12 +295,12 @@ class InworldHttpTTSService(TTSService):
             "audioConfig": audio_config,
         }
 
-        if is_given(self._settings.temperature):
+        if self._settings.temperature is not None:
             payload["temperature"] = self._settings.temperature
 
         # Use WORD timestamps for simplicity and correct spacing/capitalization
         payload["timestampType"] = self._timestamp_type
-        if is_given(self._settings.timestamp_transport_strategy):
+        if self._settings.timestamp_transport_strategy is not None:
             payload["timestampTransportStrategy"] = self._settings.timestamp_transport_strategy
 
         request_id = str(uuid.uuid4())
@@ -549,24 +548,16 @@ class InworldTTSService(AudioContextTTSService):
         self._settings = InworldTTSSettings(
             model=model,
             voice=voice_id,
+            language=None,
             audio_encoding=encoding,
             audio_sample_rate=0,
+            speaking_rate=params.speaking_rate,
+            temperature=params.temperature,
+            apply_text_normalization=params.apply_text_normalization,
+            timestamp_transport_strategy=params.timestamp_transport_strategy,
+            auto_mode=params.auto_mode if params.auto_mode is not None else aggregate_sentences,
         )
         self._timestamp_type = "WORD"
-
-        if params.temperature is not None:
-            self._settings.temperature = params.temperature
-        if params.speaking_rate is not None:
-            self._settings.speaking_rate = params.speaking_rate
-        if params.apply_text_normalization is not None:
-            self._settings.apply_text_normalization = params.apply_text_normalization
-        if params.timestamp_transport_strategy is not None:
-            self._settings.timestamp_transport_strategy = params.timestamp_transport_strategy
-
-        if params.auto_mode is not None:
-            self._settings.auto_mode = params.auto_mode
-        else:
-            self._settings.auto_mode = aggregate_sentences
 
         self._buffer_settings = {
             "maxBufferDelayMs": params.max_buffer_delay_ms,
@@ -757,12 +748,12 @@ class InworldTTSService(AudioContextTTSService):
 
         await self._disconnect_websocket()
 
-    async def _update_settings(self, update: TTSSettings) -> dict[str, Any]:
-        """Apply a settings update.
+    async def _update_settings(self, delta: TTSSettings) -> dict[str, Any]:
+        """Apply a settings delta.
 
         Settings are stored but not applied to the active connection.
         """
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
 
         if not changed:
             return changed
@@ -959,7 +950,7 @@ class InworldTTSService(AudioContextTTSService):
             "audioEncoding": self._settings.audio_encoding,
             "sampleRateHertz": self._settings.audio_sample_rate,
         }
-        if is_given(self._settings.speaking_rate):
+        if self._settings.speaking_rate is not None:
             audio_config["speakingRate"] = self._settings.speaking_rate
 
         create_config: Dict[str, Any] = {
@@ -968,13 +959,13 @@ class InworldTTSService(AudioContextTTSService):
             "audioConfig": audio_config,
         }
 
-        if is_given(self._settings.temperature):
+        if self._settings.temperature is not None:
             create_config["temperature"] = self._settings.temperature
-        if is_given(self._settings.apply_text_normalization):
+        if self._settings.apply_text_normalization is not None:
             create_config["applyTextNormalization"] = self._settings.apply_text_normalization
-        if is_given(self._settings.auto_mode):
+        if self._settings.auto_mode is not None:
             create_config["autoMode"] = self._settings.auto_mode
-        if is_given(self._settings.timestamp_transport_strategy):
+        if self._settings.timestamp_transport_strategy is not None:
             create_config["timestampTransportStrategy"] = (
                 self._settings.timestamp_transport_strategy
             )

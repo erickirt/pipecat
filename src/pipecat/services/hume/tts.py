@@ -137,6 +137,7 @@ class HumeTTSService(TTSService):
 
         params = params or HumeTTSService.InputParams()
         self._settings = HumeTTSSettings(
+            model=None,
             voice=voice_id,
             description=params.description,
             speed=params.speed,
@@ -209,8 +210,8 @@ class HumeTTSService(TTSService):
     async def update_setting(self, key: str, value: Any) -> None:
         """Runtime updates via key/value pair.
 
-        .. deprecated:: 0.0.103
-            Use ``TTSUpdateSettingsFrame(update=HumeTTSSettings(...))`` instead.
+        .. deprecated:: 0.0.104
+            Use ``TTSUpdateSettingsFrame(delta=HumeTTSSettings(...))`` instead.
 
         Args:
             key: The name of the setting to update. Recognized keys are:
@@ -224,7 +225,7 @@ class HumeTTSService(TTSService):
             warnings.simplefilter("always")
             warnings.warn(
                 "'update_setting' is deprecated, use "
-                "'TTSUpdateSettingsFrame(update=HumeTTSSettings(...))' instead.",
+                "'TTSUpdateSettingsFrame(delta=HumeTTSSettings(...))' instead.",
                 DeprecationWarning,
                 stacklevel=2,
             )

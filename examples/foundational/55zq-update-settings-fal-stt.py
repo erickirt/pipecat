@@ -101,7 +101,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
 
         await asyncio.sleep(10)
         logger.info('Updating Fal STT settings: task="translate"')
-        await task.queue_frame(STTUpdateSettingsFrame(update=FalSTTSettings(task="translate")))
+        await task.queue_frame(STTUpdateSettingsFrame(delta=FalSTTSettings(task="translate")))
 
     @transport.event_handler("on_client_disconnected")
     async def on_client_disconnected(transport, client):

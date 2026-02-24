@@ -267,6 +267,12 @@ class AWSNovaSonicLLMService(LLMService):
             temperature=params.temperature,
             max_tokens=params.max_tokens,
             top_p=params.top_p,
+            top_k=None,
+            frequency_penalty=None,
+            presence_penalty=None,
+            seed=None,
+            filter_incomplete_user_turns=False,
+            user_turn_completion_config=None,
             endpointing_sensitivity=params.endpointing_sensitivity,
         )
         self._sync_model_name_to_metrics()
@@ -338,12 +344,12 @@ class AWSNovaSonicLLMService(LLMService):
     # settings
     #
 
-    async def _update_settings(self, update: AWSNovaSonicLLMSettings) -> dict[str, Any]:
-        """Apply a settings update.
+    async def _update_settings(self, delta: AWSNovaSonicLLMSettings) -> dict[str, Any]:
+        """Apply a settings delta.
 
         Settings are stored but not applied to the active connection.
         """
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
 
         if not changed:
             return changed

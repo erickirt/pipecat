@@ -106,13 +106,13 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
             await asyncio.sleep(10)
             logger.info('Updating Deepgram TTS settings: voice="aura-2-aries-en"')
             await task.queue_frame(
-                TTSUpdateSettingsFrame(update=DeepgramTTSSettings(voice="aura-2-aries-en"))
+                TTSUpdateSettingsFrame(delta=DeepgramTTSSettings(voice="aura-2-aries-en"))
             )
 
             await asyncio.sleep(10)
             logger.info('Updating Deepgram TTS settings: voice="aura-2-luna-en"')
             await task.queue_frame(
-                TTSUpdateSettingsFrame(update=DeepgramTTSSettings(voice="aura-2-luna-en"))
+                TTSUpdateSettingsFrame(delta=DeepgramTTSSettings(voice="aura-2-luna-en"))
             )
 
         @transport.event_handler("on_client_disconnected")

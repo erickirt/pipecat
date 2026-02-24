@@ -174,13 +174,13 @@ class BaseWhisperSTTService(SegmentedSTTService):
     def _create_client(self, api_key: Optional[str], base_url: Optional[str]):
         return AsyncOpenAI(api_key=api_key, base_url=base_url)
 
-    async def _update_settings(self, update: STTSettings) -> dict[str, Any]:
-        """Apply a settings update, syncing instance variables.
+    async def _update_settings(self, delta: STTSettings) -> dict[str, Any]:
+        """Apply a settings delta, syncing instance variables.
 
         Keeps ``_language``, ``_prompt``, and ``_temperature`` in sync with
         the settings fields.
         """
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
 
         if "language" in changed:
             self._language = self._settings.language

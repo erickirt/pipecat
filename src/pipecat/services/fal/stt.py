@@ -224,6 +224,7 @@ class FalSTTService(SegmentedSTTService):
 
         self._fal_client = fal_client.AsyncClient(key=api_key or os.getenv("FAL_KEY"))
         self._settings = FalSTTSettings(
+            model=None,
             language=self.language_to_service_language(params.language)
             if params.language
             else "en",

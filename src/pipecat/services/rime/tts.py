@@ -31,7 +31,7 @@ from pipecat.frames.frames import (
     TTSStoppedFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection
-from pipecat.services.settings import NOT_GIVEN, TTSSettings, _NotGiven, is_given
+from pipecat.services.settings import NOT_GIVEN, TTSSettings, _NotGiven
 from pipecat.services.tts_service import (
     AudioContextTTSService,
     InterruptibleTTSService,
@@ -233,27 +233,19 @@ class RimeTTSService(AudioContextTTSService):
             samplingRate=0,  # updated in start()
             language=self.language_to_service_language(params.language)
             if params.language
-            else NOT_GIVEN,
-            segment=params.segment if params.segment is not None else NOT_GIVEN,
+            else None,
+            segment=params.segment,
             # Arcana params
-            repetition_penalty=params.repetition_penalty
-            if params.repetition_penalty is not None
-            else NOT_GIVEN,
-            temperature=params.temperature if params.temperature is not None else NOT_GIVEN,
-            top_p=params.top_p if params.top_p is not None else NOT_GIVEN,
+            repetition_penalty=params.repetition_penalty,
+            temperature=params.temperature,
+            top_p=params.top_p,
             # Mistv2 params
-            speedAlpha=params.speed_alpha if params.speed_alpha is not None else NOT_GIVEN,
-            reduceLatency=params.reduce_latency if params.reduce_latency is not None else NOT_GIVEN,
-            pauseBetweenBrackets=params.pause_between_brackets
-            if params.pause_between_brackets is not None
-            else NOT_GIVEN,
-            phonemizeBetweenBrackets=params.phonemize_between_brackets
-            if params.phonemize_between_brackets is not None
-            else NOT_GIVEN,
-            noTextNormalization=params.no_text_normalization
-            if params.no_text_normalization is not None
-            else NOT_GIVEN,
-            saveOovs=params.save_oovs if params.save_oovs is not None else NOT_GIVEN,
+            speedAlpha=params.speed_alpha,
+            reduceLatency=params.reduce_latency,
+            pauseBetweenBrackets=params.pause_between_brackets,
+            phonemizeBetweenBrackets=params.phonemize_between_brackets,
+            noTextNormalization=params.no_text_normalization,
+            saveOovs=params.save_oovs,
         )
         self._sync_model_name_to_metrics()
 
@@ -295,32 +287,32 @@ class RimeTTSService(AudioContextTTSService):
             "audioFormat": self._settings.audioFormat,
             "samplingRate": self._settings.samplingRate,
         }
-        if is_given(self._settings.language):
+        if self._settings.language is not None:
             params["lang"] = self._settings.language
-        if is_given(self._settings.segment):
+        if self._settings.segment is not None:
             params["segment"] = self._settings.segment
 
         if self._settings.model == "arcana":
-            if is_given(self._settings.repetition_penalty):
+            if self._settings.repetition_penalty is not None:
                 params["repetition_penalty"] = self._settings.repetition_penalty
-            if is_given(self._settings.temperature):
+            if self._settings.temperature is not None:
                 params["temperature"] = self._settings.temperature
-            if is_given(self._settings.top_p):
+            if self._settings.top_p is not None:
                 params["top_p"] = self._settings.top_p
         else:  # mistv2/mist
-            if is_given(self._settings.speedAlpha):
+            if self._settings.speedAlpha is not None:
                 params["speedAlpha"] = self._settings.speedAlpha
-            if is_given(self._settings.reduceLatency):
+            if self._settings.reduceLatency is not None:
                 params["reduceLatency"] = self._settings.reduceLatency
-            if is_given(self._settings.pauseBetweenBrackets):
+            if self._settings.pauseBetweenBrackets is not None:
                 params["pauseBetweenBrackets"] = json.dumps(self._settings.pauseBetweenBrackets)
-            if is_given(self._settings.phonemizeBetweenBrackets):
+            if self._settings.phonemizeBetweenBrackets is not None:
                 params["phonemizeBetweenBrackets"] = json.dumps(
                     self._settings.phonemizeBetweenBrackets
                 )
-            if is_given(self._settings.noTextNormalization):
+            if self._settings.noTextNormalization is not None:
                 params["noTextNormalization"] = json.dumps(self._settings.noTextNormalization)
-            if is_given(self._settings.saveOovs):
+            if self._settings.saveOovs is not None:
                 params["saveOovs"] = json.dumps(self._settings.saveOovs)
 
         return params
@@ -350,13 +342,13 @@ class RimeTTSService(AudioContextTTSService):
         self._extra_msg_fields["inlineSpeedAlpha"] = ",".join(speed_vals + [str(speed)])
         return f"[{text}]"
 
-    async def _update_settings(self, update: TTSSettings) -> dict[str, Any]:
-        """Apply a settings update and reconnect if necessary.
+    async def _update_settings(self, delta: TTSSettings) -> dict[str, Any]:
+        """Apply a settings delta and reconnect if necessary.
 
         Since all settings are WebSocket URL query parameters,
         any setting change requires reconnecting to apply the new values.
         """
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
 
         if changed and self._websocket:
             await self._disconnect()
@@ -665,11 +657,19 @@ class RimeHttpTTSService(TTSService):
             language=self.language_to_service_language(params.language)
             if params.language
             else "eng",
+            audioFormat="pcm",
+            samplingRate=0,
+            segment=None,
             speedAlpha=params.speed_alpha,
             reduceLatency=params.reduce_latency,
             pauseBetweenBrackets=params.pause_between_brackets,
             phonemizeBetweenBrackets=params.phonemize_between_brackets,
-            inlineSpeedAlpha=params.inline_speed_alpha if params.inline_speed_alpha else NOT_GIVEN,
+            noTextNormalization=None,
+            saveOovs=None,
+            inlineSpeedAlpha=params.inline_speed_alpha if params.inline_speed_alpha else None,
+            repetition_penalty=None,
+            temperature=None,
+            top_p=None,
             voice=voice_id,
         )
         self._sync_model_name_to_metrics()
@@ -719,7 +719,7 @@ class RimeHttpTTSService(TTSService):
             "pauseBetweenBrackets": self._settings.pauseBetweenBrackets,
             "phonemizeBetweenBrackets": self._settings.phonemizeBetweenBrackets,
         }
-        if is_given(self._settings.inlineSpeedAlpha):
+        if self._settings.inlineSpeedAlpha is not None:
             payload["inlineSpeedAlpha"] = self._settings.inlineSpeedAlpha
         payload["text"] = text
         payload["speaker"] = self._settings.voice
@@ -846,13 +846,11 @@ class RimeNonJsonTTSService(InterruptibleTTSService):
             samplingRate=sample_rate,
             language=self.language_to_service_language(params.language)
             if params.language
-            else NOT_GIVEN,
-            segment=params.segment if params.segment is not None else NOT_GIVEN,
-            repetition_penalty=params.repetition_penalty
-            if params.repetition_penalty is not None
-            else NOT_GIVEN,
-            temperature=params.temperature if params.temperature is not None else NOT_GIVEN,
-            top_p=params.top_p if params.top_p is not None else NOT_GIVEN,
+            else None,
+            segment=params.segment,
+            repetition_penalty=params.repetition_penalty,
+            temperature=params.temperature,
+            top_p=params.top_p,
         )
         self._sync_model_name_to_metrics()
         # Add any extra parameters for future compatibility
@@ -940,15 +938,15 @@ class RimeNonJsonTTSService(InterruptibleTTSService):
                 "audioFormat": self._settings.audioFormat,
                 "samplingRate": self._settings.samplingRate,
             }
-            if is_given(self._settings.language):
+            if self._settings.language is not None:
                 settings_dict["lang"] = self._settings.language
-            if is_given(self._settings.segment):
+            if self._settings.segment is not None:
                 settings_dict["segment"] = self._settings.segment
-            if is_given(self._settings.repetition_penalty):
+            if self._settings.repetition_penalty is not None:
                 settings_dict["repetition_penalty"] = self._settings.repetition_penalty
-            if is_given(self._settings.temperature):
+            if self._settings.temperature is not None:
                 settings_dict["temperature"] = self._settings.temperature
-            if is_given(self._settings.top_p):
+            if self._settings.top_p is not None:
                 settings_dict["top_p"] = self._settings.top_p
             # Include extras
             settings_dict.update(self._settings.extra)
@@ -1046,13 +1044,13 @@ class RimeNonJsonTTSService(InterruptibleTTSService):
         except Exception as e:
             yield ErrorFrame(error=f"Unknown error occurred: {e}")
 
-    async def _update_settings(self, update: TTSSettings) -> dict[str, Any]:
-        """Apply a settings update and reconnect if necessary.
+    async def _update_settings(self, delta: TTSSettings) -> dict[str, Any]:
+        """Apply a settings delta and reconnect if necessary.
 
         Since all settings are WebSocket URL query parameters,
         any setting change requires reconnecting to apply the new values.
         """
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
 
         if changed:
             logger.debug("Settings changed, reconnecting WebSocket with new parameters")

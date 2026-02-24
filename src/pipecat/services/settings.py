@@ -6,24 +6,32 @@
 
 """Settings infrastructure for Pipecat AI services.
 
-This module provides dataclass-based settings objects for service configuration.
-Each service type has a corresponding settings class (e.g. ``TTSSettings``,
-``LLMSettings``) whose fields use the ``NOT_GIVEN`` sentinel to distinguish
-"leave unchanged" from an explicit ``None``.
+Each service type has a settings dataclass (``LLMSettings``, ``TTSSettings``,
+``STTSettings``, or a service-specific subclass).  The same class is used in
+two distinct modes:
 
-Key concepts:
+**Store mode** — the service's ``self._settings`` object that holds the full
+current state.  Every field must have a real value; ``NOT_GIVEN`` is never
+valid here.  Services that don't support an inherited field should set it to
+``None``.  ``validate_complete()`` (called automatically in
+``AIService.start()``) enforces this invariant.
 
-- **NOT_GIVEN sentinel**: A value meaning "this field was not provided in the
-  update". Distinct from ``None`` (which may be a valid value for a setting).
-- **Settings as both state and delta**: The same class is used for the
-  service's current settings *and* for update objects.  Fields set to
-  ``NOT_GIVEN`` are simply skipped when applying an update.
-- **apply_update**: Applies a delta onto a target settings object and returns
-  a dict mapping each changed field name to its previous value.
-- **from_mapping**: Constructs a settings object from a plain dict,
-  supporting field aliases (e.g. ``"voice_id"`` → ``"voice"``).
-- **Extras**: Unknown keys land in the ``extra`` dict so services that have
-  non-standard settings don't lose data.
+**Delta mode** — a sparse update object carried by an
+``*UpdateSettingsFrame``.  Only the fields the caller wants to change are set;
+all others remain at their default of ``NOT_GIVEN``.  ``apply_update()``
+merges a delta into a store, skipping any ``NOT_GIVEN`` fields.
+
+Key helpers:
+
+- ``NOT_GIVEN`` / ``is_given()`` — sentinel and check for "field not provided
+  in this delta".
+- ``apply_update(delta)`` — merge a delta into a store, returning changed
+  fields.
+- ``from_mapping(dict)`` — build a delta from a plain dict (for backward
+  compatibility with dict-based ``*UpdateSettingsFrame``).
+- ``validate_complete()`` — assert that a store has no ``NOT_GIVEN`` fields.
+- ``extra`` dict — overflow for service-specific keys that don't map to a
+  declared field.
 """
 
 from __future__ import annotations
@@ -45,12 +53,15 @@ if TYPE_CHECKING:
 
 
 class _NotGiven:
-    """Sentinel indicating a settings field was not provided.
+    """Sentinel meaning "this field was not included in the delta".
 
-    ``NOT_GIVEN`` means "the caller did not supply this value" — distinct from
-    ``None``, which may be a legitimate setting value.  It is used as the
-    default for every settings field so that ``apply_update`` can tell which
-    fields the caller actually wants to change.
+    ``NOT_GIVEN`` is distinct from ``None`` (which is a valid stored value,
+    typically meaning "this service doesn't support this field").  Every
+    settings field defaults to ``NOT_GIVEN`` so that delta-mode objects are
+    sparse by default and ``apply_update`` can skip untouched fields.
+
+    ``NOT_GIVEN`` must never appear in a store-mode object — see
+    ``validate_complete()``.
     """
 
     _instance: Optional[_NotGiven] = None
@@ -68,11 +79,25 @@ class _NotGiven:
 
 
 NOT_GIVEN: _NotGiven = _NotGiven()
-"""Singleton sentinel meaning "this field was not included in the update"."""
+"""Singleton sentinel meaning "this field was not included in the delta".
+
+Valid only in delta-mode settings objects.  Must never appear in a service's
+``self._settings`` (store mode) — use ``None`` instead for unsupported fields.
+"""
 
 
 def is_given(value: Any) -> bool:
-    """Check whether a value was explicitly provided (i.e. is not ``NOT_GIVEN``).
+    """Check whether a delta field was explicitly provided.
+
+    Typically used when processing a delta to decide whether a field
+    should be applied::
+
+        if is_given(delta.voice):
+            # caller wants to change the voice
+            ...
+
+    For store-mode objects this always returns ``True`` (since
+    ``validate_complete`` ensures no ``NOT_GIVEN`` fields remain).
 
     Args:
         value: The value to check.
@@ -94,28 +119,38 @@ _S = TypeVar("_S", bound="ServiceSettings")
 class ServiceSettings:
     """Base class for runtime-updatable service settings.
 
-    These settings represent the subset of a service's configuration that can
+    These settings capture the subset of a service's configuration that can
     be changed **while the pipeline is running** (e.g. switching the model or
     changing the voice).  They are *not* meant to capture every constructor
     parameter — only those that support live updates via
     ``*UpdateSettingsFrame``.
 
     Every AI service type (LLM, TTS, STT) extends this with its own fields.
-    Fields default to ``NOT_GIVEN`` so that an instance can represent either
-    the full current state **or** a sparse update delta. Note that in the full
-    current state, **all fields will be given** (i.e. ``NOT_GIVEN`` is reserved
-    for update deltas).
+    Each instance operates in one of two modes (see module docstring):
+
+    - **Store mode** (``self._settings``): holds the full current state.
+      Every field must be a real value — ``NOT_GIVEN`` is never valid.
+      Use ``None`` for inherited fields the service doesn't support.
+      Enforced at runtime by ``validate_complete()``.
+    - **Delta mode** (``*UpdateSettingsFrame``): a sparse update.
+      Only fields the caller wants to change are set; all others stay at
+      the default ``NOT_GIVEN`` and are skipped by ``apply_update()``.
 
     Parameters:
-        model: The model identifier used by the service.
+        model: The model identifier used by the service.  Set to ``None``
+            in store mode if the service has no model concept.
         extra: Overflow dict for service-specific keys that don't map to a
             declared field.
     """
 
     # -- common fields -------------------------------------------------------
 
-    model: str | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
-    """AI model identifier (e.g. ``"gpt-4o"``, ``"eleven_turbo_v2_5"``)."""
+    model: str | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    """AI model identifier (e.g. ``"gpt-4o"``, ``"eleven_turbo_v2_5"``).
+
+    Defaults to ``NOT_GIVEN`` for delta mode.  In store mode, set to a
+    model string or ``None`` if the service has no model concept.
+    """
 
     extra: Dict[str, Any] = field(default_factory=dict)
     """Catch-all for service-specific keys that have no declared field."""
@@ -132,10 +167,14 @@ class ServiceSettings:
     # -- public API ----------------------------------------------------------
 
     def given_fields(self) -> Dict[str, Any]:
-        """Return a dict of only the fields that were explicitly provided.
+        """Return a dict of only the fields that are not ``NOT_GIVEN``.
 
-        Skips ``NOT_GIVEN`` values and the ``extra`` field itself.  Entries
-        from ``extra`` are included at the top level.
+        Primarily useful for delta-mode objects to inspect which fields were
+        set.  For a store-mode object this returns all declared fields (since
+        none should be ``NOT_GIVEN``).
+
+        Skips the ``extra`` field itself but merges its entries into the
+        returned dict at the top level.
 
         Returns:
             Dictionary mapping field names to their provided values.
@@ -150,18 +189,18 @@ class ServiceSettings:
         result.update(self.extra)
         return result
 
-    def apply_update(self: _S, update: _S) -> Dict[str, Any]:
-        """Apply *update* onto this settings object, returning changed fields.
+    def apply_update(self: _S, delta: _S) -> Dict[str, Any]:
+        """Merge a delta-mode object into this store-mode object.
 
-        Only fields in *update* that are **given** (i.e. not ``NOT_GIVEN``)
+        Only fields in *delta* that are **given** (i.e. not ``NOT_GIVEN``)
         are considered.  A field is "changed" if its new value differs from
         the current value.
 
-        The ``extra`` dicts are merged: keys present in the update overwrite
+        The ``extra`` dicts are merged: keys present in the delta overwrite
         keys in the target.
 
         Args:
-            update: A settings object of the same type containing the delta.
+            delta: A delta-mode settings object of the same type.
 
         Returns:
             A dict mapping each changed field name to its **pre-update** value.
@@ -170,7 +209,9 @@ class ServiceSettings:
 
         Examples::
 
+            # store-mode object (all fields given)
             current = TTSSettings(voice="alice", language="en")
+            # delta-mode object (only voice is set)
             delta = TTSSettings(voice="bob")
             changed = current.apply_update(delta)
             # changed == {"voice": "alice"}
@@ -180,7 +221,7 @@ class ServiceSettings:
         for f in fields(self):
             if f.name == "extra":
                 continue
-            new_val = getattr(update, f.name)
+            new_val = getattr(delta, f.name)
             if not is_given(new_val):
                 continue
             old_val = getattr(self, f.name)
@@ -189,7 +230,7 @@ class ServiceSettings:
                 changed[f.name] = old_val
 
         # Merge extra
-        for key, new_val in update.extra.items():
+        for key, new_val in delta.extra.items():
             old_val = self.extra.get(key, NOT_GIVEN)
             if old_val != new_val:
                 self.extra[key] = new_val
@@ -199,10 +240,12 @@ class ServiceSettings:
 
     @classmethod
     def from_mapping(cls: Type[_S], settings: Mapping[str, Any]) -> _S:
-        """Construct a settings object from a plain dictionary.
+        """Build a **delta-mode** settings object from a plain dictionary.
 
         This exists for backward compatibility with code that passes plain
-        dicts via ``*UpdateSettingsFrame(settings={...})``.
+        dicts via ``*UpdateSettingsFrame(settings={...})``.  The returned
+        object is a delta: only the keys present in *settings* are set;
+        all other fields remain ``NOT_GIVEN``.
 
         Keys are matched to dataclass fields by name.  Keys listed in
         ``_aliases`` are translated to their canonical name first.  Any
@@ -212,13 +255,14 @@ class ServiceSettings:
             settings: A dictionary of setting names to values.
 
         Returns:
-            A new settings instance with the corresponding fields populated.
+            A new delta-mode settings instance.
 
         Examples::
 
-            update = TTSSettings.from_mapping({"voice_id": "alice", "speed": 1.2})
-            # update.voice == "alice"  (via alias)
-            # update.extra == {"speed": 1.2}
+            delta = TTSSettings.from_mapping({"voice_id": "alice", "speed": 1.2})
+            # delta.voice == "alice"  (via alias)
+            # delta.language is NOT_GIVEN  (not in the dict)
+            # delta.extra == {"speed": 1.2}
         """
         field_names = {f.name for f in fields(cls)} - {"extra"}
         kwargs: Dict[str, Any] = {}
@@ -235,6 +279,31 @@ class ServiceSettings:
         instance = cls(**kwargs)
         instance.extra = extra
         return instance
+
+    def validate_complete(self) -> None:
+        """Check that this is a valid store-mode object (no ``NOT_GIVEN`` fields).
+
+        Called automatically by ``AIService.start()`` to catch fields that a
+        service forgot to initialize in its ``__init__``.  Can also be called
+        manually after constructing a store-mode settings object.
+
+        Logs a warning for each uninitialized field.  Failure to initialize
+        all fields may or may not cause runtime issues — it depends on
+        whether and how the service actually reads the field — but it indicates
+        a deviation from expectations and should be fixed.
+        """
+        missing = [
+            f.name
+            for f in fields(self)
+            if f.name != "extra" and isinstance(getattr(self, f.name), _NotGiven)
+        ]
+        if missing:
+            names = ", ".join(missing)
+            logger.error(
+                f"{type(self).__name__}: the following fields are NOT_GIVEN: {names}. "
+                f"All settings fields should be initialized in the service's "
+                f"__init__ (use None for unsupported fields)."
+            )
 
     def copy(self: _S) -> _S:
         """Return a deep copy of this settings instance.
@@ -254,7 +323,12 @@ class ServiceSettings:
 class LLMSettings(ServiceSettings):
     """Runtime-updatable settings for LLM services.
 
-    See ``ServiceSettings`` for the general concept.
+    Used in both store and delta mode — see ``ServiceSettings``.
+
+    These fields are common across LLM providers.  Not every provider supports
+    every field; in store mode, set unsupported fields to ``None`` (e.g. a
+    service that doesn't support ``seed`` should initialize it as
+    ``seed=None``).
 
     Parameters:
         model: LLM model identifier.
@@ -274,15 +348,15 @@ class LLMSettings(ServiceSettings):
             and prompts for incomplete turns.
     """
 
-    temperature: float | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
-    max_tokens: int | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
-    top_p: float | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
-    top_k: int | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
-    frequency_penalty: float | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
-    presence_penalty: float | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
-    seed: int | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
-    filter_incomplete_user_turns: bool | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
-    user_turn_completion_config: UserTurnCompletionConfig | _NotGiven = field(
+    temperature: float | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    max_tokens: int | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    top_p: float | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    top_k: int | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    frequency_penalty: float | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    presence_penalty: float | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    seed: int | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    filter_incomplete_user_turns: bool | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    user_turn_completion_config: UserTurnCompletionConfig | None | _NotGiven = field(
         default_factory=lambda: NOT_GIVEN
     )
 
@@ -291,23 +365,25 @@ class LLMSettings(ServiceSettings):
 class TTSSettings(ServiceSettings):
     """Runtime-updatable settings for TTS services.
 
-    See ``ServiceSettings`` for the general concept.
+    Used in both store and delta mode — see ``ServiceSettings``.
+
+    In store mode, set unsupported fields to ``None`` (e.g. ``language=None``
+    if the service doesn't expose a language setting).
 
     Parameters:
         model: TTS model identifier.
         voice: Voice identifier or name.
-        language: Language for speech synthesis. The union type reflects the
-            *input* side: callers may pass a ``Language`` enum or a raw string.
-            However, the **stored** value is always a service-specific string
-            — ``TTSService._update_settings`` converts ``Language`` enums via
-            ``language_to_service_language()`` before writing, and ``__init__``
-            methods do the same at construction time. Code that reads
-            ``self._settings.language`` after initialisation can treat it as
-            ``str``.
+        language: Language for speech synthesis.  The union type reflects the
+            *input* side: callers may pass a ``Language`` enum or a raw string
+            in a delta.  However, the **stored** value (in store mode) is
+            always a service-specific string or ``None`` —
+            ``TTSService._update_settings`` converts ``Language`` enums via
+            ``language_to_service_language()`` before writing, and
+            ``__init__`` methods do the same at construction time.
     """
 
     voice: str | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
-    language: Language | str | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    language: Language | str | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
 
     _aliases: ClassVar[Dict[str, str]] = {"voice_id": "voice"}
 
@@ -316,18 +392,20 @@ class TTSSettings(ServiceSettings):
 class STTSettings(ServiceSettings):
     """Runtime-updatable settings for STT services.
 
-    See ``ServiceSettings`` for the general concept.
+    Used in both store and delta mode — see ``ServiceSettings``.
+
+    In store mode, set unsupported fields to ``None`` (e.g. ``language=None``
+    if the service auto-detects language).
 
     Parameters:
         model: STT model identifier.
-        language: Language for speech recognition. The union type reflects the
-            *input* side: callers may pass a ``Language`` enum or a raw string.
-            However, the **stored** value is always a service-specific string
-            — ``STTService._update_settings`` converts ``Language`` enums via
-            ``language_to_service_language()`` before writing, and ``__init__``
-            methods do the same at construction time. Code that reads
-            ``self._settings.language`` after initialisation can treat it as
-            ``str``.
+        language: Language for speech recognition.  The union type reflects the
+            *input* side: callers may pass a ``Language`` enum or a raw string
+            in a delta.  However, the **stored** value (in store mode) is
+            always a service-specific string or ``None`` —
+            ``STTService._update_settings`` converts ``Language`` enums via
+            ``language_to_service_language()`` before writing, and
+            ``__init__`` methods do the same at construction time.
     """
 
-    language: Language | str | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    language: Language | str | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)

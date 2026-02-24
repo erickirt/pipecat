@@ -116,6 +116,7 @@ class AssemblyAISTTService(WebsocketSTTService):
 
         self._api_key = api_key
         self._settings = AssemblyAISTTSettings(
+            model=None,
             language=language,
             connection_params=connection_params,
         )
@@ -186,18 +187,18 @@ class AssemblyAISTTService(WebsocketSTTService):
         """
         return True
 
-    async def _update_settings(self, update: STTSettings) -> dict[str, Any]:
-        """Apply a settings update.
+    async def _update_settings(self, delta: STTSettings) -> dict[str, Any]:
+        """Apply a settings delta.
 
         Settings are stored but not applied to the active connection.
 
         Args:
-            update: A :class:`STTSettings` (or ``AssemblyAISTTSettings``) delta.
+            delta: A :class:`STTSettings` (or ``AssemblyAISTTSettings``) delta.
 
         Returns:
             Dict mapping changed field names to their previous values.
         """
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
 
         if not changed:
             return changed

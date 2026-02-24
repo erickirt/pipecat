@@ -827,6 +827,12 @@ class AWSBedrockLLMService(LLMService):
             max_tokens=params.max_tokens,
             temperature=params.temperature,
             top_p=params.top_p,
+            top_k=None,
+            frequency_penalty=None,
+            presence_penalty=None,
+            seed=None,
+            filter_incomplete_user_turns=False,
+            user_turn_completion_config=None,
             latency=params.latency,
             additional_model_request_fields=params.additional_model_request_fields
             if isinstance(params.additional_model_request_fields, dict)

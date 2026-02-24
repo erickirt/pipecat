@@ -33,7 +33,7 @@ from pipecat.frames.frames import (
     VADUserStoppedSpeakingFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection
-from pipecat.services.settings import NOT_GIVEN, STTSettings, _NotGiven, is_given
+from pipecat.services.settings import NOT_GIVEN, STTSettings, _NotGiven
 from pipecat.services.stt_latency import SPEECHMATICS_TTFS_P99
 from pipecat.services.stt_service import STTService
 from pipecat.transcriptions.language import Language, resolve_language
@@ -429,6 +429,7 @@ class SpeechmaticsSTTService(STTService):
 
         # Settings — seeded from InputParams
         self._settings = SpeechmaticsSTTSettings(
+            model=None,
             language=params.language,
             domain=params.domain,
             turn_detection_mode=params.turn_detection_mode,
@@ -492,8 +493,8 @@ class SpeechmaticsSTTService(STTService):
         await super().start(frame)
         await self._connect()
 
-    async def _update_settings(self, update: SpeechmaticsSTTSettings) -> dict[str, Any]:
-        """Apply settings update, reconnecting only when necessary.
+    async def _update_settings(self, delta: SpeechmaticsSTTSettings) -> dict[str, Any]:
+        """Apply settings delta, reconnecting only when necessary.
 
         Fields are classified into three categories (see
         ``SpeechmaticsSTTSettings``):
@@ -506,12 +507,12 @@ class SpeechmaticsSTTService(STTService):
           time and therefore require a full disconnect / reconnect.
 
         Args:
-            update: A settings delta.
+            delta: A settings delta.
 
         Returns:
             Dict mapping changed field names to their previous values.
         """
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
 
         if not changed:
             return changed
@@ -674,21 +675,21 @@ class SpeechmaticsSTTService(STTService):
         # Language + domain
         language = s.language
         config.language = self._language_to_speechmatics_language(language)
-        config.domain = s.domain if is_given(s.domain) else None
+        config.domain = s.domain if s.domain is not None else None
         config.output_locale = self._locale_to_speechmatics_locale(config.language, language)
 
         # Speaker config
         config.speaker_config = SpeakerFocusConfig(
-            focus_speakers=s.focus_speakers if is_given(s.focus_speakers) else [],
-            ignore_speakers=s.ignore_speakers if is_given(s.ignore_speakers) else [],
-            focus_mode=s.focus_mode if is_given(s.focus_mode) else SpeakerFocusMode.RETAIN,
+            focus_speakers=s.focus_speakers if s.focus_speakers is not None else [],
+            ignore_speakers=s.ignore_speakers if s.ignore_speakers is not None else [],
+            focus_mode=s.focus_mode if s.focus_mode is not None else SpeakerFocusMode.RETAIN,
         )
-        config.known_speakers = s.known_speakers if is_given(s.known_speakers) else []
+        config.known_speakers = s.known_speakers if s.known_speakers is not None else []
 
         # Custom dictionary
-        config.additional_vocab = s.additional_vocab if is_given(s.additional_vocab) else []
+        config.additional_vocab = s.additional_vocab if s.additional_vocab is not None else []
 
-        # Advanced parameters — only set if given (not NOT_GIVEN or None)
+        # Advanced parameters — only set if not None
         for param in [
             "operating_point",
             "max_delay",
@@ -703,17 +704,17 @@ class SpeechmaticsSTTService(STTService):
             "prefer_current_speaker",
         ]:
             val = getattr(s, param)
-            if is_given(val) and val is not None:
+            if val is not None:
                 setattr(config, param, val)
 
         # Extra parameters
-        if is_given(s.extra_params) and isinstance(s.extra_params, dict):
+        if isinstance(s.extra_params, dict):
             for key, value in s.extra_params.items():
                 if hasattr(config, key):
                     setattr(config, key, value)
 
         # Enable sentences
-        split = s.split_sentences if is_given(s.split_sentences) else False
+        split = s.split_sentences if s.split_sentences is not None else False
         config.speech_segment_config = SpeechSegmentConfig(emit_sentences=split or False)
 
         return config

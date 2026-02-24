@@ -103,7 +103,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         await asyncio.sleep(10)
         logger.info("Updating AWS Transcribe STT settings: language=es")
         await task.queue_frame(
-            STTUpdateSettingsFrame(update=AWSTranscribeSTTSettings(language=Language.ES))
+            STTUpdateSettingsFrame(delta=AWSTranscribeSTTSettings(language=Language.ES))
         )
 
     @transport.event_handler("on_client_disconnected")

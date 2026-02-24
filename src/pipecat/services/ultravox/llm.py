@@ -177,7 +177,19 @@ class UltravoxRealtimeLLMService(LLMService):
             **kwargs: Additional arguments passed to parent LLMService.
         """
         super().__init__(**kwargs)
-        self._settings = UltravoxRealtimeLLMSettings()
+        self._settings = UltravoxRealtimeLLMSettings(
+            model=None,
+            temperature=None,
+            max_tokens=None,
+            top_p=None,
+            top_k=None,
+            frequency_penalty=None,
+            presence_penalty=None,
+            seed=None,
+            filter_incomplete_user_turns=False,
+            user_turn_completion_config=None,
+            output_medium=None,
+        )
         self._params = params
         if one_shot_selected_tools:
             if not isinstance(self._params, OneShotInputParams):
@@ -325,8 +337,8 @@ class UltravoxRealtimeLLMService(LLMService):
             await self.cancel_task(self._receive_task, timeout=1.0)
             self._receive_task = None
 
-    async def _update_settings(self, update: UltravoxRealtimeLLMSettings):
-        changed = await super()._update_settings(update)
+    async def _update_settings(self, delta: UltravoxRealtimeLLMSettings):
+        changed = await super()._update_settings(delta)
         if "output_medium" in changed:
             await self._update_output_medium(self._settings.output_medium)
         self._warn_unhandled_updated_settings(changed.keys() - {"output_medium"})

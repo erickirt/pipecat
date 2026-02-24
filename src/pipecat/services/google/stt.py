@@ -368,7 +368,7 @@ class GoogleSTTSettings(STTSettings):
         language_codes: List of Google STT language code strings
             (e.g. ``["en-US"]``).
 
-            .. deprecated:: 0.0.103
+            .. deprecated:: 0.0.104
                 Use ``languages`` instead. If both are provided, ``languages``
                 takes precedence. This field is here just for backward
                 compatibility with dict-based settings updates.
@@ -554,7 +554,9 @@ class GoogleSTTService(STTService):
         self._client = speech_v2.SpeechAsyncClient(credentials=creds, client_options=client_options)
 
         self._settings = GoogleSTTSettings(
+            language=None,
             languages=list(params.language_list),
+            language_codes=None,
             model=params.model,
             use_separate_recognition_per_channel=params.use_separate_recognition_per_channel,
             enable_automatic_punctuation=params.enable_automatic_punctuation,
@@ -597,11 +599,9 @@ class GoogleSTTService(STTService):
         Returns:
             List[str]: Google STT language code strings.
         """
-        from pipecat.services.settings import is_given
-
-        if is_given(self._settings.languages):
+        if self._settings.languages:
             return [self.language_to_service_language(lang) for lang in self._settings.languages]
-        if is_given(self._settings.language_codes):
+        if self._settings.language_codes:
             return list(self._settings.language_codes)
         return ["en-US"]
 
@@ -632,8 +632,8 @@ class GoogleSTTService(STTService):
         logger.debug(f"Switching STT languages to: {languages}")
         await self._update_settings(GoogleSTTSettings(languages=list(languages)))
 
-    async def _update_settings(self, update: GoogleSTTSettings) -> dict[str, Any]:
-        """Apply settings update and reconnect if anything changed.
+    async def _update_settings(self, delta: GoogleSTTSettings) -> dict[str, Any]:
+        """Apply settings delta and reconnect if anything changed.
 
         Handles ``language`` from base ``set_language`` by converting it to
         ``languages``. Emits a deprecation warning if ``language_codes`` is
@@ -641,7 +641,7 @@ class GoogleSTTService(STTService):
         Reconnects the stream on any change.
 
         Args:
-            update: A settings delta.
+            delta: A settings delta.
 
         Returns:
             Dict mapping changed field names to their previous values.
@@ -649,13 +649,13 @@ class GoogleSTTService(STTService):
         from pipecat.services.settings import is_given
 
         # If base set_language sent a Language value, convert to languages list
-        if is_given(update.language):
-            update.languages = [update.language]
+        if is_given(delta.language):
+            delta.languages = [delta.language]
             # Clear language so the base class doesn't try to store it
-            update.language = NOT_GIVEN
+            delta.language = NOT_GIVEN
 
         # Warn on deprecated language_codes usage
-        if is_given(update.language_codes):
+        if is_given(delta.language_codes):
             with warnings.catch_warnings():
                 warnings.simplefilter("always")
                 warnings.warn(
@@ -665,7 +665,7 @@ class GoogleSTTService(STTService):
                     stacklevel=2,
                 )
 
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
 
         if changed:
             await self._reconnect_if_needed()
@@ -745,34 +745,34 @@ class GoogleSTTService(STTService):
                 DeprecationWarning,
             )
         # Build a settings delta from the provided options
-        update = GoogleSTTSettings()
+        delta = GoogleSTTSettings()
 
         if languages is not None:
-            update.languages = list(languages)
+            delta.languages = list(languages)
         if model is not None:
-            update.model = model
+            delta.model = model
         if enable_automatic_punctuation is not None:
-            update.enable_automatic_punctuation = enable_automatic_punctuation
+            delta.enable_automatic_punctuation = enable_automatic_punctuation
         if enable_spoken_punctuation is not None:
-            update.enable_spoken_punctuation = enable_spoken_punctuation
+            delta.enable_spoken_punctuation = enable_spoken_punctuation
         if enable_spoken_emojis is not None:
-            update.enable_spoken_emojis = enable_spoken_emojis
+            delta.enable_spoken_emojis = enable_spoken_emojis
         if profanity_filter is not None:
-            update.profanity_filter = profanity_filter
+            delta.profanity_filter = profanity_filter
         if enable_word_time_offsets is not None:
-            update.enable_word_time_offsets = enable_word_time_offsets
+            delta.enable_word_time_offsets = enable_word_time_offsets
         if enable_word_confidence is not None:
-            update.enable_word_confidence = enable_word_confidence
+            delta.enable_word_confidence = enable_word_confidence
         if enable_interim_results is not None:
-            update.enable_interim_results = enable_interim_results
+            delta.enable_interim_results = enable_interim_results
         if enable_voice_activity_events is not None:
-            update.enable_voice_activity_events = enable_voice_activity_events
+            delta.enable_voice_activity_events = enable_voice_activity_events
 
         if location is not None:
             logger.debug(f"Updating location to: {location}")
             self._location = location
 
-        await self._update_settings(update)
+        await self._update_settings(delta)
 
     async def _connect(self):
         """Initialize streaming recognition config and stream."""

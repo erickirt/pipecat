@@ -110,6 +110,7 @@ class AzureSTTService(STTService):
         self._audio_stream = None
         self._speech_recognizer = None
         self._settings = AzureSTTSettings(
+            model=None,
             region=region,
             language=language_to_azure_language(language),
             sample_rate=sample_rate,
@@ -134,12 +135,12 @@ class AzureSTTService(STTService):
         """
         return language_to_azure_language(language)
 
-    async def _update_settings(self, update: STTSettings) -> dict[str, Any]:
-        """Apply a settings update.
+    async def _update_settings(self, delta: STTSettings) -> dict[str, Any]:
+        """Apply a settings delta.
 
         Settings are stored but not applied to the active recognizer.
         """
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
 
         # TODO: someday we could reconnect here to apply updated settings.
         # Code might look something like the below:

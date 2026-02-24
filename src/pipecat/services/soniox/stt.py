@@ -24,7 +24,7 @@ from pipecat.frames.frames import (
     VADUserStoppedSpeakingFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection
-from pipecat.services.settings import NOT_GIVEN, STTSettings, _NotGiven, is_given
+from pipecat.services.settings import NOT_GIVEN, STTSettings, _NotGiven
 from pipecat.services.stt_latency import SONIOX_TTFS_P99
 from pipecat.services.stt_service import WebsocketSTTService
 from pipecat.transcriptions.language import Language
@@ -141,10 +141,28 @@ class SonioxSTTSettings(STTSettings):
     """Settings for Soniox STT service.
 
     Parameters:
-        input_params: Soniox ``SonioxInputParams`` for detailed configuration.
+        audio_format: Audio format to use for transcription.
+        num_channels: Number of channels to use for transcription.
+        language_hints: List of language hints to use for transcription.
+        language_hints_strict: If true, strictly enforce language hints.
+        context: Customization for transcription. String for models with
+            context_version 1 and SonioxContextObject for models with
+            context_version 2.
+        enable_speaker_diarization: Whether to enable speaker diarization.
+        enable_language_identification: Whether to enable language identification.
+        client_reference_id: Client reference ID to use for transcription.
     """
 
-    input_params: SonioxInputParams | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    audio_format: str | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    num_channels: int | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    language_hints: List[Language] | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    language_hints_strict: bool | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    context: SonioxContextObject | str | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    enable_speaker_diarization: bool | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    enable_language_identification: bool | None | _NotGiven = field(
+        default_factory=lambda: NOT_GIVEN
+    )
+    client_reference_id: str | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
 
 
 class SonioxSTTService(WebsocketSTTService):
@@ -199,7 +217,15 @@ class SonioxSTTService(WebsocketSTTService):
 
         self._settings = SonioxSTTSettings(
             model=params.model,
-            input_params=params,
+            language=None,
+            audio_format=params.audio_format,
+            num_channels=params.num_channels,
+            language_hints=params.language_hints,
+            language_hints_strict=params.language_hints_strict,
+            context=params.context,
+            enable_speaker_diarization=params.enable_speaker_diarization,
+            enable_language_identification=params.enable_language_identification,
+            client_reference_id=params.client_reference_id,
         )
         self._sync_model_name_to_metrics()
 
@@ -225,37 +251,21 @@ class SonioxSTTService(WebsocketSTTService):
         await super().start(frame)
         await self._connect()
 
-    async def _update_settings(self, update: SonioxSTTSettings) -> dict[str, Any]:
-        """Apply a settings update, keeping ``input_params`` in sync.
-
-        Top-level ``model`` is the source of truth.  When it is given in
-        *update* its value is propagated into ``input_params``.  When only
-        ``input_params`` is given, its ``model`` is propagated *up* to the
-        top-level field.
+    async def _update_settings(self, delta: SonioxSTTSettings) -> dict[str, Any]:
+        """Apply settings delta.
 
         Settings are stored but not applied to the active connection.
 
         Args:
-            update: A settings delta.
+            delta: A settings delta.
 
         Returns:
             Dict mapping changed field names to their previous values.
         """
-        model_given = is_given(getattr(update, "model", NOT_GIVEN))
-
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
 
         if not changed:
             return changed
-
-        # --- Sync model --------------------------------------------------
-        if model_given:
-            # Top-level model wins → push into input_params.
-            self._settings.input_params.model = self._settings.model
-        elif "input_params" in changed and self._settings.input_params.model is not None:
-            # Only input_params was given → pull model up.
-            self._settings.model = self._settings.input_params.model
-            self._sync_model_name_to_metrics()
 
         # TODO: someday we could reconnect here to apply updated settings.
         # Code might look something like the below:
@@ -377,26 +387,26 @@ class SonioxSTTService(WebsocketSTTService):
             # Either one or the other is required.
             enable_endpoint_detection = not self._vad_force_turn_endpoint
 
-            params = self._settings.input_params
+            s = self._settings
 
-            context = params.context
+            context = s.context
             if isinstance(context, SonioxContextObject):
                 context = context.model_dump()
 
             # Send the initial configuration message.
             config = {
                 "api_key": self._api_key,
-                "model": self._settings.model,
-                "audio_format": params.audio_format,
-                "num_channels": params.num_channels or 1,
+                "model": s.model,
+                "audio_format": s.audio_format,
+                "num_channels": s.num_channels or 1,
                 "enable_endpoint_detection": enable_endpoint_detection,
                 "sample_rate": self.sample_rate,
-                "language_hints": _prepare_language_hints(params.language_hints),
-                "language_hints_strict": params.language_hints_strict,
+                "language_hints": _prepare_language_hints(s.language_hints),
+                "language_hints_strict": s.language_hints_strict,
                 "context": context,
-                "enable_speaker_diarization": params.enable_speaker_diarization,
-                "enable_language_identification": params.enable_language_identification,
-                "client_reference_id": params.client_reference_id,
+                "enable_speaker_diarization": s.enable_speaker_diarization,
+                "enable_language_identification": s.enable_language_identification,
+                "client_reference_id": s.client_reference_id,
             }
 
             # Send the configuration message.

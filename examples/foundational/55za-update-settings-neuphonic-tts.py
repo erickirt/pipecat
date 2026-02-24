@@ -98,7 +98,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
 
         await asyncio.sleep(10)
         logger.info("Updating Neuphonic TTS settings: speed=1.4")
-        await task.queue_frame(TTSUpdateSettingsFrame(update=NeuphonicTTSSettings(speed=1.4)))
+        await task.queue_frame(TTSUpdateSettingsFrame(delta=NeuphonicTTSSettings(speed=1.4)))
 
     @transport.event_handler("on_client_disconnected")
     async def on_client_disconnected(transport, client):

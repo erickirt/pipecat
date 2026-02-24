@@ -71,7 +71,7 @@ class PiperTTSService(TTSService):
         """
         super().__init__(**kwargs)
 
-        self._settings = PiperTTSSettings(voice=voice_id)
+        self._settings = PiperTTSSettings(model=None, voice=voice_id, language=None)
 
         download_dir = download_dir or Path.cwd()
 
@@ -96,12 +96,12 @@ class PiperTTSService(TTSService):
         """
         return True
 
-    async def _update_settings(self, update: PiperTTSSettings) -> dict[str, Any]:
-        """Apply a settings update.
+    async def _update_settings(self, delta: PiperTTSSettings) -> dict[str, Any]:
+        """Apply a settings delta.
 
         Settings are stored but not applied to the active connection.
         """
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
         if not changed:
             return changed
         # TODO: voice changes would require re-downloading and loading the model.
@@ -207,7 +207,7 @@ class PiperHttpTTSService(TTSService):
 
         self._base_url = base_url
         self._session = aiohttp_session
-        self._settings = PiperHttpTTSSettings(voice=voice_id)
+        self._settings = PiperHttpTTSSettings(model=None, voice=voice_id, language=None)
 
     def can_generate_metrics(self) -> bool:
         """Check if this service can generate processing metrics.

@@ -102,7 +102,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
 
             await asyncio.sleep(10)
             logger.info("Updating Sarvam TTS settings: pace=1.5")
-            await task.queue_frame(TTSUpdateSettingsFrame(update=SarvamHttpTTSSettings(pace=1.5)))
+            await task.queue_frame(TTSUpdateSettingsFrame(delta=SarvamHttpTTSSettings(pace=1.5)))
 
         @transport.event_handler("on_client_disconnected")
         async def on_client_disconnected(transport, client):

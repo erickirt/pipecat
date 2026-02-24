@@ -260,9 +260,11 @@ class MySTTService(STTService):
 
     _settings: MySTTSettings
 
-    def __init__(self, *, model: str, region: str, **kwargs):
+    def __init__(self, *, model: str, language: str, region: str, **kwargs):
         super().__init__(**kwargs)
-        self._settings = MySTTSettings(model=model, region=region)
+        # Initial value must be provided for every field in self._settings
+        # before service is started
+        self._settings = MySTTSettings(model=model, language=language, region=region)
         self._sync_model_name_to_metrics()
 ```
 
@@ -298,7 +300,7 @@ async def _update_settings(self, update: STTSettings) -> dict[str, Any]:
     if "language" in changed:
         await self._update_language()
     else:
-        # TODO: handle changes to other settings soon!
+        # TODO: this should be temporary - handle changes to other settings soon!
         self._warn_unhandled_updated_settings(changed.keys() - {"language"})
 
     return changed

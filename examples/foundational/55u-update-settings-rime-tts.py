@@ -101,7 +101,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
 
         await asyncio.sleep(10)
         logger.info("Updating Rime TTS settings: voice=bond")
-        await task.queue_frame(TTSUpdateSettingsFrame(update=RimeTTSSettings(voice="bond")))
+        await task.queue_frame(TTSUpdateSettingsFrame(delta=RimeTTSSettings(voice="bond")))
 
     @transport.event_handler("on_client_disconnected")
     async def on_client_disconnected(transport, client):

@@ -106,7 +106,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         await asyncio.sleep(10)
         logger.info("Updating ElevenLabs Realtime STT settings: language=es")
         await task.queue_frame(
-            STTUpdateSettingsFrame(update=ElevenLabsRealtimeSTTSettings(language=Language.ES))
+            STTUpdateSettingsFrame(delta=ElevenLabsRealtimeSTTSettings(language=Language.ES))
         )
 
     @transport.event_handler("on_client_disconnected")

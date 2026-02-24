@@ -144,9 +144,12 @@ class BaseOpenAILLMService(LLMService):
             seed=params.seed,
             temperature=params.temperature,
             top_p=params.top_p,
+            top_k=None,
             max_tokens=params.max_tokens,
             max_completion_tokens=params.max_completion_tokens,
             service_tier=params.service_tier,
+            filter_incomplete_user_turns=False,
+            user_turn_completion_config=None,
             extra=params.extra if isinstance(params.extra, dict) else {},
         )
         self._retry_timeout_secs = retry_timeout_secs

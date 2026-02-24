@@ -100,7 +100,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         await asyncio.sleep(10)
         logger.info('Updating NVIDIA TTS settings: language="ES_US"')
         await task.queue_frame(
-            TTSUpdateSettingsFrame(update=NvidiaTTSSettings(language=Language.ES_US))
+            TTSUpdateSettingsFrame(delta=NvidiaTTSSettings(language=Language.ES_US))
         )
 
     @transport.event_handler("on_client_disconnected")

@@ -206,25 +206,25 @@ class DeepgramSTTService(STTService):
         """
         return True
 
-    async def _update_settings(self, update: STTSettings) -> dict[str, Any]:
-        """Apply a settings update, keeping ``live_options`` in sync.
+    async def _update_settings(self, delta: STTSettings) -> dict[str, Any]:
+        """Apply a settings delta, keeping ``live_options`` in sync.
 
         Top-level ``model`` and ``language`` are the source of truth.  When
-        they are given in *update* their values are propagated into
+        they are given in *delta* their values are propagated into
         ``live_options``.  When only ``live_options`` is given, its ``model``
         and ``language`` are propagated *up* to the top-level fields.
 
         Any change triggers a WebSocket reconnect.
         """
         # Determine which top-level fields are explicitly provided.
-        model_given = isinstance(update, DeepgramSTTSettings) and is_given(
-            getattr(update, "model", NOT_GIVEN)
+        model_given = isinstance(delta, DeepgramSTTSettings) and is_given(
+            getattr(delta, "model", NOT_GIVEN)
         )
-        language_given = isinstance(update, DeepgramSTTSettings) and is_given(
-            getattr(update, "language", NOT_GIVEN)
+        language_given = isinstance(delta, DeepgramSTTSettings) and is_given(
+            getattr(delta, "language", NOT_GIVEN)
         )
 
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
 
         if not changed:
             return changed

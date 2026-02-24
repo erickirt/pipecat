@@ -125,7 +125,7 @@ class NvidiaTTSService(TTSService):
     async def set_model(self, model: str):
         """Set the TTS model.
 
-        .. deprecated:: 0.0.103
+        .. deprecated:: 0.0.104
             Model cannot be changed after initialization for NVIDIA Riva TTS.
             Set model and function id in the constructor instead, e.g.::
 
@@ -150,12 +150,12 @@ class NvidiaTTSService(TTSService):
                 stacklevel=2,
             )
 
-    async def _update_settings(self, update: NvidiaTTSSettings) -> dict[str, Any]:
-        """Apply a settings update.
+    async def _update_settings(self, delta: NvidiaTTSSettings) -> dict[str, Any]:
+        """Apply a settings delta.
 
         Settings are stored but not applied to the active connection.
         """
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
         if not changed:
             return changed
         # TODO: reconnect gRPC client to apply changed settings.

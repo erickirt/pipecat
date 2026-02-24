@@ -103,7 +103,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         await asyncio.sleep(10)
         logger.info("Updating Soniox STT settings: language=es")
         await task.queue_frame(
-            STTUpdateSettingsFrame(update=SonioxSTTSettings(language=Language.ES))
+            STTUpdateSettingsFrame(delta=SonioxSTTSettings(language=Language.ES))
         )
 
     @transport.event_handler("on_client_disconnected")

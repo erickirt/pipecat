@@ -144,6 +144,7 @@ class KokoroTTSService(TTSService):
         self._lang_code = language_to_kokoro_language(params.language)
 
         self._settings = KokoroTTSSettings(
+            model=None,
             voice=voice_id,
             language=language_to_kokoro_language(params.language),
             lang_code=language_to_kokoro_language(params.language),

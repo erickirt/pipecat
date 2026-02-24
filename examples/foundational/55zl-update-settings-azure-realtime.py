@@ -102,7 +102,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         logger.info("Updating Azure Realtime LLM settings: output_modalities=['text']")
         await task.queue_frame(
             LLMUpdateSettingsFrame(
-                update=OpenAIRealtimeLLMSettings(
+                delta=OpenAIRealtimeLLMSettings(
                     session_properties=events.SessionProperties(output_modalities=["text"])
                 )
             )
@@ -112,7 +112,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         logger.info("Updating Azure Realtime LLM settings: output_modalities=['audio']")
         await task.queue_frame(
             LLMUpdateSettingsFrame(
-                update=OpenAIRealtimeLLMSettings(
+                delta=OpenAIRealtimeLLMSettings(
                     session_properties=events.SessionProperties(output_modalities=["audio"])
                 )
             )

@@ -100,7 +100,9 @@ class ResembleAITTSService(AudioContextTTSService):
         self._api_key = api_key
         self._url = url
         self._settings = ResembleAITTSSettings(
+            model=None,
             voice=voice_id,
+            language=None,
             precision=precision,
             output_format=output_format,
             resemble_sample_rate=sample_rate,

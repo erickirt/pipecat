@@ -241,7 +241,7 @@ class NvidiaSTTService(STTService):
     async def set_model(self, model: str):
         """Set the ASR model for transcription.
 
-        .. deprecated:: 0.0.103
+        .. deprecated:: 0.0.104
             Model cannot be changed after initialization for NVIDIA Riva streaming STT.
             Set model and function id in the constructor instead, e.g.::
 
@@ -579,16 +579,16 @@ class NvidiaSegmentedSTTService(SegmentedSTTService):
         self._config = self._create_recognition_config()
         logger.debug(f"Initialized NvidiaSegmentedSTTService with model: {self._settings.model}")
 
-    async def _update_settings(self, update: STTSettings) -> dict[str, Any]:
-        """Apply a settings update and sync internal state.
+    async def _update_settings(self, delta: STTSettings) -> dict[str, Any]:
+        """Apply a settings delta and sync internal state.
 
         Args:
-            update: A :class:`STTSettings` (or ``NvidiaSegmentedSTTSettings``) delta.
+            delta: A :class:`STTSettings` (or ``NvidiaSegmentedSTTSettings``) delta.
 
         Returns:
             Dict mapping changed field names to their previous values.
         """
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
 
         if changed:
             self._config = self._create_recognition_config()

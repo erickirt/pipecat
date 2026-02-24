@@ -103,7 +103,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         logger.info("Updating ResembleAI TTS settings: voice (changed)")
         await task.queue_frame(
             TTSUpdateSettingsFrame(
-                update=ResembleAITTSSettings(voice=os.getenv("RESEMBLE_VOICE_UUID_ALT"))
+                delta=ResembleAITTSSettings(voice=os.getenv("RESEMBLE_VOICE_UUID_ALT"))
             )
         )
 

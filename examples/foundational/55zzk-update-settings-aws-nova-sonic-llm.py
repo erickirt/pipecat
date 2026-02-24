@@ -99,7 +99,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         await asyncio.sleep(10)
         logger.info("Updating AWS Nova Sonic LLM settings: temperature=0.1")
         await task.queue_frame(
-            LLMUpdateSettingsFrame(update=AWSNovaSonicLLMSettings(temperature=0.1))
+            LLMUpdateSettingsFrame(delta=AWSNovaSonicLLMSettings(temperature=0.1))
         )
 
     @transport.event_handler("on_client_disconnected")

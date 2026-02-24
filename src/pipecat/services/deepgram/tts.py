@@ -109,6 +109,7 @@ class DeepgramTTSService(WebsocketTTSService):
         self._settings = DeepgramTTSSettings(
             model=voice,
             voice=voice,
+            language=None,
             encoding=encoding,
         )
         self._sync_model_name_to_metrics()
@@ -183,16 +184,16 @@ class DeepgramTTSService(WebsocketTTSService):
 
         await self._disconnect_websocket()
 
-    async def _update_settings(self, update: TTSSettings) -> dict[str, Any]:
-        """Apply a settings update.
+    async def _update_settings(self, delta: TTSSettings) -> dict[str, Any]:
+        """Apply a settings delta.
 
         Args:
-            update: A :class:`TTSSettings` (or ``DeepgramTTSSettings``) delta.
+            delta: A :class:`TTSSettings` (or ``DeepgramTTSSettings``) delta.
 
         Returns:
             Dict mapping changed field names to their previous values.
         """
-        changed = await super()._update_settings(update)
+        changed = await super()._update_settings(delta)
 
         # Deepgram uses voice as the model, so keep them in sync for metrics
         if "voice" in changed:
@@ -401,6 +402,7 @@ class DeepgramHttpTTSService(TTSService):
         self._settings = DeepgramTTSSettings(
             model=voice,
             voice=voice,
+            language=None,
             encoding=encoding,
         )
         self._sync_model_name_to_metrics()

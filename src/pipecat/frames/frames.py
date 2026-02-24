@@ -2121,21 +2121,21 @@ class TTSStoppedFrame(ControlFrame):
 class ServiceUpdateSettingsFrame(ControlFrame):
     """Base frame for updating service settings.
 
-    Supports both a ``settings`` dict (for backward compatibility) and an
-    ``update`` object.  When both are provided, ``update`` takes precedence.
+    Supports both a ``settings`` dict (for backward compatibility) and a
+    ``delta`` object.  When both are provided, ``delta`` takes precedence.
 
     Parameters:
         settings: Dictionary of setting name to value mappings.
 
-            .. deprecated:: 0.0.103
-                Use ``update`` with a typed settings object instead.
+            .. deprecated:: 0.0.104
+                Use ``delta`` with a typed settings object instead.
 
-        update: :class:`~pipecat.services.settings.ServiceSettings` object
-            describing the delta to apply.
+        delta: :class:`~pipecat.services.settings.ServiceSettings` delta-mode
+            object describing the fields to change.
     """
 
     settings: Mapping[str, Any] = field(default_factory=dict)
-    update: Optional["ServiceSettings"] = None
+    delta: Optional["ServiceSettings"] = None
 
 
 @dataclass

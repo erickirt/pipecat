@@ -42,7 +42,7 @@ class AIService(FrameProcessor):
             **kwargs: Additional arguments passed to the parent FrameProcessor.
         """
         super().__init__(**kwargs)
-        self._settings: ServiceSettings = ServiceSettings(model="")
+        self._settings: ServiceSettings = ServiceSettings()  # Here in case subclass doesn't implement more specific settings (hopefully shouldn't happen)
         self._session_properties: Dict[str, Any] = {}
         self._tracing_enabled: bool = False
         self._tracing_context = None
@@ -73,6 +73,7 @@ class AIService(FrameProcessor):
         Args:
             frame: The start frame containing initialization parameters.
         """
+        self._settings.validate_complete()
         self._tracing_enabled = frame.enable_tracing
         self._tracing_context = frame.tracing_context
 
@@ -98,10 +99,10 @@ class AIService(FrameProcessor):
         """
         pass
 
-    async def _update_settings(self, update: ServiceSettings) -> Dict[str, Any]:
-        """Apply a settings update and return the changed fields.
+    async def _update_settings(self, delta: ServiceSettings) -> Dict[str, Any]:
+        """Apply a settings delta and return the changed fields.
 
-        The update is applied to ``_settings`` and a dict mapping each changed
+        The delta is applied to ``_settings`` and a dict mapping each changed
         field name to its **pre-update** value is returned.  The ``model``
         field is handled specially: when it changes, ``set_model_name`` is
         called.
@@ -110,12 +111,12 @@ class AIService(FrameProcessor):
         to react to specific changed fields (e.g. reconnect on voice change).
 
         Args:
-            update: A settings delta.
+            delta: A delta-mode settings object.
 
         Returns:
             Dict mapping changed field names to their previous values.
         """
-        changed = self._settings.apply_update(update)
+        changed = self._settings.apply_update(delta)
 
         if "model" in changed:
             self._sync_model_name_to_metrics()

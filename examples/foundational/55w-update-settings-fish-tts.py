@@ -102,7 +102,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         await asyncio.sleep(10)
         logger.info("Updating Fish Audio TTS settings: prosody_speed=1.5")
         await task.queue_frame(
-            TTSUpdateSettingsFrame(update=FishAudioTTSSettings(prosody_speed=1.5))
+            TTSUpdateSettingsFrame(delta=FishAudioTTSSettings(prosody_speed=1.5))
         )
 
     @transport.event_handler("on_client_disconnected")

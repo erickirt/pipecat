@@ -108,7 +108,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         await asyncio.sleep(10)
         logger.info('Updating Gemini TTS settings: prompt="Speak slowly and dramatically"')
         await task.queue_frame(
-            TTSUpdateSettingsFrame(update=GeminiTTSSettings(prompt="Speak slowly and dramatically"))
+            TTSUpdateSettingsFrame(delta=GeminiTTSSettings(prompt="Speak slowly and dramatically"))
         )
 
     @transport.event_handler("on_client_disconnected")

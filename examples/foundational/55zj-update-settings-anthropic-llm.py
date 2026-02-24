@@ -101,7 +101,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
 
         await asyncio.sleep(10)
         logger.info("Updating Anthropic LLM settings: temperature=0.1")
-        await task.queue_frame(LLMUpdateSettingsFrame(update=AnthropicLLMSettings(temperature=0.1)))
+        await task.queue_frame(LLMUpdateSettingsFrame(delta=AnthropicLLMSettings(temperature=0.1)))
 
     @transport.event_handler("on_client_disconnected")
     async def on_client_disconnected(transport, client):

@@ -89,9 +89,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
 
         await asyncio.sleep(10)
         logger.info("Updating Gemini Live LLM settings: temperature=0.1")
-        await task.queue_frame(
-            LLMUpdateSettingsFrame(update=GeminiLiveLLMSettings(temperature=0.1))
-        )
+        await task.queue_frame(LLMUpdateSettingsFrame(delta=GeminiLiveLLMSettings(temperature=0.1)))
 
     @transport.event_handler("on_client_disconnected")
     async def on_client_disconnected(transport, client):

@@ -42,7 +42,7 @@ import base64
 import json
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
+from typing import Any, AsyncGenerator, ClassVar, Dict, List, Optional, Tuple
 
 import aiohttp
 from loguru import logger
@@ -62,7 +62,7 @@ from pipecat.frames.frames import (
 )
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.sarvam._sdk import sdk_headers
-from pipecat.services.settings import NOT_GIVEN, TTSSettings, _NotGiven, is_given
+from pipecat.services.settings import NOT_GIVEN, TTSSettings, _NotGiven
 from pipecat.services.tts_service import InterruptibleTTSService, TTSService
 from pipecat.transcriptions.language import Language, resolve_language
 from pipecat.utils.tracing.service_decorators import traced_tts
@@ -280,7 +280,8 @@ class SarvamTTSSettings(TTSSettings):
     """Settings for Sarvam WebSocket TTS service.
 
     Parameters:
-        target_language_code: Sarvam language code.
+        language: Sarvam language code (e.g. ``"hi-IN"``).  Uses the standard
+            ``TTSSettings.language`` field.
         speech_sample_rate: Audio sample rate as string.
         enable_preprocessing: Enable text preprocessing. Defaults to False.
             **Note:** Always enabled for bulbul:v3-beta.
@@ -304,7 +305,8 @@ class SarvamTTSSettings(TTSSettings):
             **Note:** Only supported for bulbul:v3-beta. Ignored for v2.
     """
 
-    target_language_code: str | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    _aliases: ClassVar[Dict[str, str]] = {"target_language_code": "language"}
+
     speech_sample_rate: str | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
     enable_preprocessing: bool | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
     min_buffer_size: int | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
@@ -486,6 +488,9 @@ class SarvamHttpTTSService(TTSService):
                 True if self._config.preprocessing_always_enabled else params.enable_preprocessing
             ),
             pace=pace,
+            pitch=None,
+            loudness=None,
+            temperature=None,
             model=model,
             voice=voice_id,
         )
@@ -559,19 +564,19 @@ class SarvamHttpTTSService(TTSService):
                 "sample_rate": self.sample_rate,
                 "enable_preprocessing": self._settings.enable_preprocessing,
                 "model": self._settings.model,
-                "pace": self._settings.pace if is_given(self._settings.pace) else 1.0,
+                "pace": self._settings.pace if self._settings.pace is not None else 1.0,
             }
 
             # Add model-specific parameters based on config
             if self._config.supports_pitch:
-                payload["pitch"] = self._settings.pitch if is_given(self._settings.pitch) else 0.0
+                payload["pitch"] = self._settings.pitch if self._settings.pitch is not None else 0.0
             if self._config.supports_loudness:
                 payload["loudness"] = (
-                    self._settings.loudness if is_given(self._settings.loudness) else 1.0
+                    self._settings.loudness if self._settings.loudness is not None else 1.0
                 )
             if self._config.supports_temperature:
                 payload["temperature"] = (
-                    self._settings.temperature if is_given(self._settings.temperature) else 0.6
+                    self._settings.temperature if self._settings.temperature is not None else 0.6
                 )
 
             headers = {
@@ -837,7 +842,7 @@ class SarvamTTSService(InterruptibleTTSService):
 
         # Build base settings
         self._settings = SarvamTTSSettings(
-            target_language_code=(
+            language=(
                 self.language_to_service_language(params.language) if params.language else "en-IN"
             ),
             speech_sample_rate=str(sample_rate),
@@ -849,6 +854,9 @@ class SarvamTTSService(InterruptibleTTSService):
             output_audio_codec=params.output_audio_codec,
             output_audio_bitrate=params.output_audio_bitrate,
             pace=pace,
+            pitch=None,
+            loudness=None,
+            temperature=None,
             model=model,
             voice=voice_id,
         )
@@ -949,9 +957,9 @@ class SarvamTTSService(InterruptibleTTSService):
         if isinstance(frame, (LLMFullResponseEndFrame, EndFrame)):
             await self.flush_audio()
 
-    async def _update_settings(self, update: TTSSettings) -> dict[str, Any]:
-        """Apply a settings update and resend config if voice changed."""
-        changed = await super()._update_settings(update)
+    async def _update_settings(self, delta: TTSSettings) -> dict[str, Any]:
+        """Apply a settings delta and resend config if voice changed."""
+        changed = await super()._update_settings(delta)
 
         if changed:
             await self._send_config()
@@ -1016,7 +1024,7 @@ class SarvamTTSService(InterruptibleTTSService):
             raise Exception("WebSocket not connected")
         # Build config dict for the API
         config_data = {
-            "target_language_code": self._settings.target_language_code,
+            "target_language_code": self._settings.language,
             "speaker": self._settings.voice,
             "speech_sample_rate": self._settings.speech_sample_rate,
             "enable_preprocessing": self._settings.enable_preprocessing,
@@ -1027,11 +1035,11 @@ class SarvamTTSService(InterruptibleTTSService):
             "pace": self._settings.pace,
             "model": self._settings.model,
         }
-        if is_given(self._settings.pitch):
+        if self._settings.pitch is not None:
             config_data["pitch"] = self._settings.pitch
-        if is_given(self._settings.loudness):
+        if self._settings.loudness is not None:
             config_data["loudness"] = self._settings.loudness
-        if is_given(self._settings.temperature):
+        if self._settings.temperature is not None:
             config_data["temperature"] = self._settings.temperature
         logger.debug(f"Config being sent is {config_data}")
         config_message = {"type": "config", "data": config_data}

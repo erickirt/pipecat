@@ -101,7 +101,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         logger.info("Updating Grok Realtime LLM settings: voice='Rex'")
         await task.queue_frame(
             LLMUpdateSettingsFrame(
-                update=GrokRealtimeLLMSettings(
+                delta=GrokRealtimeLLMSettings(
                     session_properties=events.SessionProperties(voice="Rex")
                 )
             )
