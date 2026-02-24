@@ -301,10 +301,8 @@ class SonioxSTTService(WebsocketSTTService):
         Yields:
             Frame: None (transcription results come via WebSocket callbacks).
         """
-        await self.start_processing_metrics()
         if self._websocket and self._websocket.state is State.OPEN:
             await self._websocket.send(audio)
-        await self.stop_processing_metrics()
 
         yield None
 
@@ -485,6 +483,8 @@ class SonioxSTTService(WebsocketSTTService):
                             # the rest will be sent as interim tokens (even final tokens).
                             await send_endpoint_transcript()
                         else:
+                            if not self._final_transcription_buffer:
+                                await self.start_processing_metrics()
                             self._final_transcription_buffer.append(token)
                     else:
                         non_final_transcription.append(token)
