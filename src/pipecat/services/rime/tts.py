@@ -33,7 +33,7 @@ from pipecat.frames.frames import (
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.settings import NOT_GIVEN, TTSSettings, _NotGiven, is_given
 from pipecat.services.tts_service import (
-    AudioContextWordTTSService,
+    AudioContextTTSService,
     InterruptibleTTSService,
     TTSService,
 )
@@ -130,7 +130,7 @@ class RimeNonJsonTTSSettings(TTSSettings):
     _aliases: ClassVar[Dict[str, str]] = {"speaker": "voice"}
 
 
-class RimeTTSService(AudioContextWordTTSService):
+class RimeTTSService(AudioContextTTSService):
     """Text-to-Speech service using Rime's websocket API.
 
     Uses Rime's websocket JSON API to convert text to speech with word-level timing
@@ -207,6 +207,7 @@ class RimeTTSService(AudioContextWordTTSService):
             push_text_frames=False,
             push_stop_frames=True,
             pause_frame_processing=True,
+            supports_word_timestamps=True,
             append_trailing_space=True,
             sample_rate=sample_rate,
             **kwargs,

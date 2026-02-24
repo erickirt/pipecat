@@ -25,7 +25,7 @@ from pipecat.frames.frames import (
 )
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.settings import NOT_GIVEN, TTSSettings, _NotGiven
-from pipecat.services.tts_service import AudioContextWordTTSService
+from pipecat.services.tts_service import AudioContextTTSService
 from pipecat.utils.tracing.service_decorators import traced_tts
 
 try:
@@ -51,7 +51,7 @@ class GradiumTTSSettings(TTSSettings):
     output_format: str | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
 
 
-class GradiumTTSService(AudioContextWordTTSService):
+class GradiumTTSService(AudioContextTTSService):
     """Text-to-Speech service using Gradium's websocket API."""
 
     _settings: GradiumTTSSettings
@@ -91,6 +91,7 @@ class GradiumTTSService(AudioContextWordTTSService):
             push_stop_frames=True,
             push_text_frames=False,
             pause_frame_processing=True,
+            supports_word_timestamps=True,
             sample_rate=SAMPLE_RATE,
             **kwargs,
         )
