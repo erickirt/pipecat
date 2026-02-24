@@ -63,6 +63,7 @@ class KrispVivaTurn(BaseTurnAnalyzer):
         model_path: Optional[str] = None,
         sample_rate: Optional[int] = None,
         params: Optional[KrispTurnParams] = None,
+        api_key: str = "",
     ) -> None:
         """Initialize the Krisp turn analyzer.
 
@@ -72,6 +73,8 @@ class KrispVivaTurn(BaseTurnAnalyzer):
             sample_rate: Optional initial sample rate for audio processing.
                 If provided, this will be used as the fixed sample rate.
             params: Configuration parameters for turn analysis behavior.
+            api_key: Krisp SDK API key. If empty, falls back to
+                the KRISP_VIVA_API_KEY environment variable.
 
         Raises:
             ValueError: If model_path is not provided and KRISP_VIVA_TURN_MODEL_PATH is not set.
@@ -83,7 +86,7 @@ class KrispVivaTurn(BaseTurnAnalyzer):
 
         # Acquire SDK reference (will initialize on first call)
         try:
-            KrispVivaSDKManager.acquire()
+            KrispVivaSDKManager.acquire(api_key=api_key)
             self._sdk_acquired = True
         except Exception as e:
             self._sdk_acquired = False

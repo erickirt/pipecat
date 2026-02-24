@@ -54,21 +54,24 @@ load_dotenv(override=True)
 
 # We use lambdas to defer transport parameter creation until the transport
 # type is selected at runtime.
+
+krisp_viva_filter = KrispVivaFilter()
+
 transport_params = {
     "daily": lambda: DailyParams(
         audio_in_enabled=True,
         audio_out_enabled=True,
-        audio_in_filter=KrispVivaFilter(),
+        audio_in_filter=krisp_viva_filter,
     ),
     "twilio": lambda: FastAPIWebsocketParams(
         audio_in_enabled=True,
         audio_out_enabled=True,
-        audio_in_filter=KrispVivaFilter(),
+        audio_in_filter=krisp_viva_filter,
     ),
     "webrtc": lambda: TransportParams(
         audio_in_enabled=True,
         audio_out_enabled=True,
-        audio_in_filter=KrispVivaFilter(),
+        audio_in_filter=krisp_viva_filter,
     ),
 }
 
