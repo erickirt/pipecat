@@ -17,13 +17,11 @@ from pipecat.frames.frames import (
     EndFrame,
     ErrorFrame,
     Frame,
-    InterruptionFrame,
     StartFrame,
     TTSAudioRawFrame,
     TTSStartedFrame,
     TTSStoppedFrame,
 )
-from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.settings import NOT_GIVEN, TTSSettings, _NotGiven
 from pipecat.services.tts_service import AudioContextTTSService
 from pipecat.utils.tracing.service_decorators import traced_tts
@@ -265,20 +263,23 @@ class GradiumTTSService(AudioContextTTSService):
         except Exception as e:
             logger.error(f"{self} exception: {e}")
 
-    async def _handle_interruption(self, frame: InterruptionFrame, direction: FrameDirection):
-        """Handle interruption by resetting context state.
+    async def on_audio_context_interrupted(self, context_id: str):
+        """Called when an audio context is cancelled due to an interruption.
 
-        The parent AudioContextTTSService._handle_interruption() cancels the audio context
-        task and creates a new one. We reset _context_id so the next run_tts() creates a
-        fresh context. No websocket reconnection needed — audio from the old client_req_id
-        will be silently dropped since the audio context no longer exists.
-
-        Args:
-            frame: The interruption frame.
-            direction: The direction of the frame.
+        No WebSocket message is needed — audio from the interrupted
+        ``client_req_id`` will be silently dropped by the base class once the
+        audio context no longer exists.
         """
-        await super()._handle_interruption(frame, direction)
         await self.stop_all_metrics()
+
+    async def on_audio_context_completed(self, context_id: str):
+        """Called after an audio context has finished playing all of its audio.
+
+        No close message is needed: Gradium signals completion with an
+        ``end_of_stream`` message (handled in ``_receive_messages``), after
+        which the server-side context is already closed.
+        """
+        pass
 
     async def _receive_messages(self):
         """Process incoming websocket messages, demultiplexing by client_req_id."""

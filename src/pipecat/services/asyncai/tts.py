@@ -10,7 +10,7 @@ import asyncio
 import base64
 import json
 from dataclasses import dataclass, field
-from typing import Any, AsyncGenerator, ClassVar, Dict, Mapping, Optional
+from typing import Any, AsyncGenerator, Mapping, Optional
 
 import aiohttp
 from loguru import logger
@@ -21,7 +21,6 @@ from pipecat.frames.frames import (
     EndFrame,
     ErrorFrame,
     Frame,
-    InterruptionFrame,
     StartFrame,
     TTSAudioRawFrame,
     TTSStartedFrame,
@@ -392,18 +391,29 @@ class AsyncAITTSService(AudioContextTTSService):
                 logger.warning(f"{self} keepalive error: {e}")
                 break
 
-    async def _handle_interruption(self, frame: InterruptionFrame, direction: FrameDirection):
-        """Handle interruption by closing the current context."""
-        context_id = self.get_active_audio_context_id()
-        await super()._handle_interruption(frame, direction)
-        # Close the current context when interrupted without closing the websocket
+    async def _close_context(self, context_id: str):
+        # Async AI requires explicit context closure to free server-side resources,
+        # both on interruption and on normal completion.
         if context_id and self._websocket:
             try:
                 await self._websocket.send(
                     json.dumps({"context_id": context_id, "close_context": True, "transcript": ""})
                 )
             except Exception as e:
-                logger.error(f"Error closing context on interruption: {e}")
+                logger.error(f"{self}: Error closing context {context_id}: {e}")
+
+    async def on_audio_context_interrupted(self, context_id: str):
+        """Close the Async AI context when the bot is interrupted."""
+        await self._close_context(context_id)
+
+    async def on_audio_context_completed(self, context_id: str):
+        """Close the Async AI context after all audio has been played.
+
+        Async AI does not send a server-side signal when a context is
+        exhausted, so Pipecat must explicitly close it with
+        ``close_context: True`` to free server-side resources.
+        """
+        await self._close_context(context_id)
 
     @traced_tts
     async def run_tts(self, text: str, context_id: str) -> AsyncGenerator[Frame, None]:

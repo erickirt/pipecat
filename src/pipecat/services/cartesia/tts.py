@@ -11,7 +11,7 @@ import json
 import warnings
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, AsyncGenerator, ClassVar, Dict, List, Literal, Mapping, Optional
+from typing import Any, AsyncGenerator, List, Literal, Mapping, Optional
 
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -21,13 +21,11 @@ from pipecat.frames.frames import (
     EndFrame,
     ErrorFrame,
     Frame,
-    InterruptionFrame,
     StartFrame,
     TTSAudioRawFrame,
     TTSStartedFrame,
     TTSStoppedFrame,
 )
-from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.settings import NOT_GIVEN, TTSSettings, _NotGiven
 from pipecat.services.tts_service import AudioContextTTSService, TTSService
 from pipecat.transcriptions.language import Language, resolve_language
@@ -563,13 +561,21 @@ class CartesiaTTSService(AudioContextTTSService):
             return self._websocket
         raise Exception("Websocket not connected")
 
-    async def _handle_interruption(self, frame: InterruptionFrame, direction: FrameDirection):
-        context_id = self.get_active_audio_context_id()
-        await super()._handle_interruption(frame, direction)
+    async def on_audio_context_interrupted(self, context_id: str):
+        """Cancel the active Cartesia context when the bot is interrupted."""
         await self.stop_all_metrics()
         if context_id:
             cancel_msg = json.dumps({"context_id": context_id, "cancel": True})
             await self._get_websocket().send(cancel_msg)
+
+    async def on_audio_context_completed(self, context_id: str):
+        """Close the Cartesia context after all audio has been played.
+
+        No close message is needed: the server already considers the context
+        done once it has sent its ``done`` message, which is handled in
+        ``_process_messages``.
+        """
+        pass
 
     async def flush_audio(self):
         """Flush any pending audio and finalize the current context."""

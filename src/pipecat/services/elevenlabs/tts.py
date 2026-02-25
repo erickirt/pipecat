@@ -666,14 +666,11 @@ class ElevenLabsTTSService(AudioContextTTSService):
             return self._websocket
         raise Exception("Websocket not connected")
 
-    async def _handle_interruption(self, frame: InterruptionFrame, direction: FrameDirection):
-        """Handle interruption by closing the current context."""
-        # Close the current context when interrupted without closing the websocket
-        context_id = self.get_active_audio_context_id()
-        await super()._handle_interruption(frame, direction)
-
+    async def _close_context(self, context_id: str):
+        # ElevenLabs requires that Pipecat explicitly closes contexts to free
+        # server-side resources, both on interruption and on normal completion.
         if context_id and self._websocket:
-            logger.trace(f"Closing context {context_id} due to interruption")
+            logger.trace(f"{self}: Closing context {context_id}")
             try:
                 # ElevenLabs requires that Pipecat manages the contexts and closes them
                 # when they're not longer in use. Since an InterruptionFrame is pushed
@@ -686,8 +683,21 @@ class ElevenLabsTTSService(AudioContextTTSService):
                 )
             except Exception as e:
                 await self.push_error(error_msg=f"Unknown error occurred: {e}", exception=e)
-            self._partial_word = ""
-            self._partial_word_start_time = 0.0
+        self._partial_word = ""
+        self._partial_word_start_time = 0.0
+
+    async def on_audio_context_interrupted(self, context_id: str):
+        """Close the ElevenLabs context when the bot is interrupted."""
+        await self._close_context(context_id)
+
+    async def on_audio_context_completed(self, context_id: str):
+        """Close the ElevenLabs context after all audio has been played.
+
+        ElevenLabs does not send a server-side signal when a context is
+        exhausted, so Pipecat must explicitly close it with
+        ``close_context: True`` to free server-side resources.
+        """
+        await self._close_context(context_id)
 
     async def _receive_messages(self):
         """Handle incoming WebSocket messages from ElevenLabs."""

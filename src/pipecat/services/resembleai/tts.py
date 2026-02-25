@@ -18,13 +18,11 @@ from pipecat.frames.frames import (
     EndFrame,
     ErrorFrame,
     Frame,
-    InterruptionFrame,
     StartFrame,
     TTSAudioRawFrame,
     TTSStartedFrame,
     TTSStoppedFrame,
 )
-from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.settings import NOT_GIVEN, TTSSettings, _NotGiven
 from pipecat.services.tts_service import AudioContextTTSService
 from pipecat.utils.tracing.service_decorators import traced_tts
@@ -247,15 +245,18 @@ class ResembleAITTSService(AudioContextTTSService):
             return self._websocket
         raise Exception("Websocket not connected")
 
-    async def _handle_interruption(self, frame: InterruptionFrame, direction: FrameDirection):
-        """Handle interruption by stopping current synthesis.
-
-        Args:
-            frame: The interruption frame.
-            direction: The direction of frame processing.
-        """
-        await super()._handle_interruption(frame, direction)
+    async def on_audio_context_interrupted(self, context_id: str):
+        """Stop metrics when the bot is interrupted."""
         await self.stop_all_metrics()
+
+    async def on_audio_context_completed(self, context_id: str):
+        """Stop metrics after the Resemble AI context finishes playing.
+
+        No close message is needed: Resemble AI signals completion with an
+        ``audio_end`` message (handled in ``_process_messages``), after which
+        the server-side context is already closed.
+        """
+        pass
 
     async def flush_audio(self):
         """Flush any pending audio and finalize the current context."""
