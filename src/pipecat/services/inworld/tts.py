@@ -681,28 +681,23 @@ class InworldTTSService(AudioContextTTSService):
 
         return word_times
 
-    async def _handle_interruption(self, frame: InterruptionFrame, direction: FrameDirection):
-        """Handle an interruption from the Inworld WebSocket TTS service.
-
-        Args:
-            frame: The interruption frame.
-            direction: The direction of the interruption.
-        """
-        old_context_id = self.get_active_audio_context_id()
-        logger.trace(f"{self}: Handling interruption, old context: {old_context_id}")
-
-        await super()._handle_interruption(frame, direction)
-
-        if old_context_id and self._websocket:
-            logger.trace(f"{self}: Closing context {old_context_id} due to interruption")
+    async def _close_context(self, context_id: str):
+        if context_id and self._websocket:
+            logger.info(f"{self}: Closing context {context_id} due to interruption or completion")
             try:
-                await self._send_close_context(old_context_id)
+                await self._send_close_context(context_id)
             except Exception as e:
                 await self.push_error(error_msg=f"Unknown error occurred: {e}", exception=e)
-
         self._cumulative_time = 0.0
         self._generation_end_time = 0.0
-        logger.trace(f"{self}: Interruption handled, context reset to None")
+
+    async def on_audio_context_interrupted(self, context_id: str):
+        """Callback invoked when an audio context has been interrupted."""
+        await self._close_context(context_id)
+
+    async def on_audio_context_completed(self, context_id: str):
+        """Callback invoked when an audio context has been completed."""
+        await self._close_context(context_id)
 
     def _get_websocket(self):
         """Get the websocket for the Inworld WebSocket TTS service.

@@ -458,13 +458,24 @@ class RimeTTSService(AudioContextTTSService):
             return self._websocket
         raise Exception("Websocket not connected")
 
-    async def _handle_interruption(self, frame: InterruptionFrame, direction: FrameDirection):
-        """Handle interruption by clearing current context."""
-        context_id = self.get_active_audio_context_id()
-        await super()._handle_interruption(frame, direction)
+    async def _close_context(self, context_id: str):
+        """Clear the Rime speech queue and stop metrics."""
         await self.stop_all_metrics()
         if context_id:
             await self._get_websocket().send(json.dumps(self._build_clear_msg()))
+
+    async def on_audio_context_interrupted(self, context_id: str):
+        """Clear the Rime speech queue and stop metrics when the bot is interrupted."""
+        await self._close_context(context_id)
+
+    async def on_audio_context_completed(self, context_id: str):
+        """Clear server-side state and stop metrics after the Rime context finishes playing.
+
+        Rime does not send a server-side completion signal (e.g. ``done`` / ``end_of_stream`` /
+        ``audio_end``), so we explicitly send a ``clear`` message to clean up
+        any residual server-side state once all audio has been delivered.
+        """
+        await self._close_context(context_id)
 
     def _calculate_word_times(self, words: list, starts: list, ends: list) -> list:
         """Calculate word timing pairs with proper spacing and punctuation.
