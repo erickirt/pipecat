@@ -57,19 +57,13 @@ Love terminal applications? Check out [Tail](https://github.com/pipecat-ai/tail)
 
 ### 🤖 Claude Code Skills
 
-Use [Pipecat Skills](https://github.com/pipecat-ai/skills) with [Claude Code](https://claude.ai/code) to scaffold projects, generate changelogs, deploy to Pipecat Cloud, and more. Install the marketplace with:
+Use [Pipecat Skills](https://github.com/pipecat-ai/skills) with [Claude Code](https://claude.ai/code) to scaffold projects, deploy to Pipecat Cloud, and more. Install the marketplace with:
 
 ```
 claude plugin marketplace add pipecat-ai/skills
 ```
 
-And install the plugins, for example:
-
-```
-claude plugin install pipecat-dev@pipecat-skills
-```
-
-there's more!
+and install any of the available plugins.
 
 ### 📺️ Pipecat TV Channel
 
@@ -178,6 +172,15 @@ You can get started with Pipecat running on your local machine, then move your a
    ```
 
 > **Note**: Some extras (local, gstreamer) require system dependencies. See documentation if you encounter build errors.
+
+### Claude Code Skills
+
+Install development workflow skills for contributing to Pipecat with [Claude Code](https://claude.ai/code):
+
+```
+claude plugin marketplace add pipecat-ai/pipecat
+claude plugin install pipecat-dev@pipecat-dev-skills
+```
 
 ### Running tests
 
