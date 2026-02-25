@@ -221,7 +221,7 @@ class ServiceSettings:
         for f in fields(self):
             if f.name == "extra":
                 continue
-            new_val = getattr(delta, f.name)
+            new_val = getattr(delta, f.name, NOT_GIVEN)
             if not is_given(new_val):
                 continue
             old_val = getattr(self, f.name)
