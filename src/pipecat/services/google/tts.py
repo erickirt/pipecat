@@ -1236,7 +1236,7 @@ class GeminiTTSService(GoogleBaseTTSService):
         super().__init__(
             sample_rate=sample_rate,
             settings=GeminiTTSSettings(
-                model=None,
+                model=model,
                 language=self.language_to_service_language(params.language)
                 if params.language
                 else "en-US",
@@ -1249,7 +1249,6 @@ class GeminiTTSService(GoogleBaseTTSService):
         )
 
         self._location = location
-        self._model = model
         self._client: texttospeech_v1.TextToSpeechAsyncClient = self._create_client(
             credentials, credentials_path
         )
@@ -1327,7 +1326,7 @@ class GeminiTTSService(GoogleBaseTTSService):
 
                 voice = texttospeech_v1.VoiceSelectionParams(
                     language_code=self._settings.language,
-                    model_name=self._model,
+                    model_name=self._settings.model,
                     multi_speaker_voice_config=multi_speaker_voice_config,
                 )
             else:
@@ -1335,7 +1334,7 @@ class GeminiTTSService(GoogleBaseTTSService):
                 voice = texttospeech_v1.VoiceSelectionParams(
                     language_code=self._settings.language,
                     name=self._settings.voice,
-                    model_name=self._model,
+                    model_name=self._settings.model,
                 )
 
             # Create streaming config
