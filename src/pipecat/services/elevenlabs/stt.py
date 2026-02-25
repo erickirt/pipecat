@@ -279,7 +279,6 @@ class ElevenLabsSTTService(SegmentedSTTService):
         self._api_key = api_key
         self._base_url = base_url
         self._session = aiohttp_session
-        self._model_id = model
 
     def can_generate_metrics(self) -> bool:
         """Check if the service can generate processing metrics.
@@ -299,25 +298,6 @@ class ElevenLabsSTTService(SegmentedSTTService):
             The ElevenLabs-specific language code, or None if not supported.
         """
         return language_to_elevenlabs_language(language)
-
-    async def _update_settings(self, delta: STTSettings) -> dict[str, Any]:
-        """Apply a settings delta.
-
-        Converts language to ElevenLabs format before applying and keeps
-        ``_model_id`` in sync with the model setting.
-
-        Args:
-            delta: A :class:`STTSettings` (or ``ElevenLabsSTTSettings``) delta.
-
-        Returns:
-            Dict mapping changed field names to their previous values.
-        """
-        changed = await super()._update_settings(delta)
-
-        if "model" in changed:
-            self._model_id = self._settings.model
-
-        return changed
 
     async def _transcribe_audio(self, audio_data: bytes) -> dict:
         """Upload audio data to ElevenLabs and get transcription result.
@@ -344,7 +324,7 @@ class ElevenLabsSTTService(SegmentedSTTService):
         )
 
         # Add required model_id, language_code, and tag_audio_events
-        data.add_field("model_id", self._model_id)
+        data.add_field("model_id", self._settings.model)
         data.add_field("language_code", self._settings.language)
         data.add_field("tag_audio_events", str(self._settings.tag_audio_events).lower())
 
@@ -522,7 +502,6 @@ class ElevenLabsRealtimeSTTService(WebsocketSTTService):
 
         self._api_key = api_key
         self._base_url = base_url
-        self._model_id = model
         self._audio_format = ""  # initialized in start()
         self._receive_task = None
 
@@ -540,9 +519,6 @@ class ElevenLabsRealtimeSTTService(WebsocketSTTService):
     async def _update_settings(self, delta: STTSettings) -> dict[str, Any]:
         """Apply a settings delta and reconnect if anything changed.
 
-        Converts language to ElevenLabs format before applying and keeps
-        ``_model_id`` in sync.
-
         Args:
             delta: A :class:`STTSettings` (or ``ElevenLabsRealtimeSTTSettings``) delta.
 
@@ -554,11 +530,9 @@ class ElevenLabsRealtimeSTTService(WebsocketSTTService):
         if not changed:
             return changed
 
-        if "model" in changed:
-            self._model_id = self._settings.model
-
         await self._disconnect()
         await self._connect()
+
         return changed
 
     async def start(self, frame: StartFrame):
@@ -704,7 +678,7 @@ class ElevenLabsRealtimeSTTService(WebsocketSTTService):
             logger.debug("Connecting to ElevenLabs Realtime STT")
 
             # Build query parameters
-            params = [f"model_id={self._model_id}"]
+            params = [f"model_id={self._settings.model}"]
 
             if self._settings.language:
                 params.append(f"language_code={self._settings.language}")
