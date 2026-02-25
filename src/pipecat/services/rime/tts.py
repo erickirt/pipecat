@@ -235,6 +235,7 @@ class RimeTTSService(AudioContextTTSService):
             if params.language
             else None,
             segment=params.segment,
+            inlineSpeedAlpha=None,  # Not applicable here
             # Arcana params
             repetition_penalty=params.repetition_penalty,
             temperature=params.temperature,
