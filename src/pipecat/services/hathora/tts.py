@@ -114,6 +114,7 @@ class HathoraTTSService(TTSService):
             settings=HathoraTTSSettings(
                 model=model,
                 voice=voice_id,
+                language=None,  # Not applicable here
                 speed=params.speed,
                 config=params.config,
             ),
