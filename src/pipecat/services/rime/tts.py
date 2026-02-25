@@ -846,6 +846,7 @@ class RimeNonJsonTTSService(InterruptibleTTSService):
             aggregate_sentences=aggregate_sentences,
             push_stop_frames=True,
             pause_frame_processing=True,
+            append_trailing_space=True,
             **kwargs,
         )
         params = params or RimeNonJsonTTSService.InputParams()
