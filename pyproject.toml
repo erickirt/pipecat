@@ -258,6 +258,11 @@ name = "Fixed"
 showcontent = true
 
 [[tool.towncrier.type]]
+directory = "performance"
+name = "Performance"
+showcontent = true
+
+[[tool.towncrier.type]]
 directory = "security"
 name = "Security"
 showcontent = true
