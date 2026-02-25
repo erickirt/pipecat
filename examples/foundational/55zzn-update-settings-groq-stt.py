@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from loguru import logger
 
 from pipecat.audio.vad.silero import SileroVADAnalyzer
-from pipecat.frames.frames import LLMRunFrame, TTSUpdateSettingsFrame
+from pipecat.frames.frames import LLMRunFrame, STTUpdateSettingsFrame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
@@ -22,9 +22,10 @@ from pipecat.processors.aggregators.llm_response_universal import (
 )
 from pipecat.runner.types import RunnerArguments
 from pipecat.runner.utils import create_transport
-from pipecat.services.deepgram.stt import DeepgramSTTService
-from pipecat.services.groq.tts import GroqTTSService, GroqTTSSettings
+from pipecat.services.cartesia.tts import CartesiaTTSService
+from pipecat.services.groq.stt import GroqSTTService
 from pipecat.services.openai.llm import OpenAILLMService
+from pipecat.services.whisper.base_stt import BaseWhisperSTTSettings
 from pipecat.transports.base_transport import BaseTransport, TransportParams
 from pipecat.transports.daily.transport import DailyParams
 from pipecat.transports.websocket.fastapi import FastAPIWebsocketParams
@@ -50,9 +51,14 @@ transport_params = {
 async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
     logger.info(f"Starting bot")
 
-    stt = DeepgramSTTService(api_key=os.getenv("DEEPGRAM_API_KEY"))
+    stt = GroqSTTService(
+        api_key=os.getenv("GROQ_API_KEY"),
+    )
 
-    tts = GroqTTSService(api_key=os.getenv("GROQ_API_KEY"))
+    tts = CartesiaTTSService(
+        api_key=os.getenv("CARTESIA_API_KEY"),
+        voice_id="71a7ad14-091c-4e8e-a314-022ece01c121",  # British Reading Lady
+    )
 
     llm = OpenAILLMService(api_key=os.getenv("OPENAI_API_KEY"))
 
@@ -97,8 +103,8 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         await task.queue_frames([LLMRunFrame()])
 
         await asyncio.sleep(10)
-        logger.info("Updating Groq TTS settings: voice=troy")
-        await task.queue_frame(TTSUpdateSettingsFrame(delta=GroqTTSSettings(voice="troy")))
+        logger.info('Updating Groq STT settings: language="es"')
+        await task.queue_frame(STTUpdateSettingsFrame(delta=BaseWhisperSTTSettings(language="es")))
 
     @transport.event_handler("on_client_disconnected")
     async def on_client_disconnected(transport, client):

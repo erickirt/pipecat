@@ -152,6 +152,9 @@ class GroqTTSService(TTSService):
                 model=self._settings.model,
                 voice=self._settings.voice,
                 response_format=self._output_format,
+                # Note: as of 2026-02-25, only a speed of 1.0 is supported, but
+                # here we pass it for completeness and future-proofing
+                speed=self._settings.speed,
                 input=text,
             )
 
