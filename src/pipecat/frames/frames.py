@@ -2118,7 +2118,7 @@ class TTSStoppedFrame(ControlFrame):
 
 
 @dataclass
-class ServiceUpdateSettingsFrame(ControlFrame):
+class ServiceUpdateSettingsFrame(ControlFrame, UninterruptibleFrame):
     """Base frame for updating service settings.
 
     Supports both a ``settings`` dict (for backward compatibility) and a
