@@ -466,12 +466,6 @@ class SarvamHttpTTSService(TTSService):
         if voice_id is None:
             voice_id = self._config.default_speaker
 
-        super().__init__(sample_rate=sample_rate, **kwargs)
-
-        self._api_key = api_key
-        self._base_url = base_url
-        self._session = aiohttp_session
-
         # Validate and clamp pace to model's valid range
         pace = params.pace
         pace_min, pace_max = self._config.pace_range
@@ -479,22 +473,32 @@ class SarvamHttpTTSService(TTSService):
             logger.warning(f"Pace {pace} is outside model range ({pace_min}-{pace_max}). Clamping.")
             pace = max(pace_min, min(pace_max, pace))
 
-        # Build base settings
-        self._settings = SarvamHttpTTSSettings(
-            language=(
-                self.language_to_service_language(params.language) if params.language else "en-IN"
+        super().__init__(
+            sample_rate=sample_rate,
+            settings=SarvamHttpTTSSettings(
+                language=(
+                    self.language_to_service_language(params.language)
+                    if params.language
+                    else "en-IN"
+                ),
+                enable_preprocessing=(
+                    True
+                    if self._config.preprocessing_always_enabled
+                    else params.enable_preprocessing
+                ),
+                pace=pace,
+                pitch=None,
+                loudness=None,
+                temperature=None,
+                model=model,
+                voice=voice_id,
             ),
-            enable_preprocessing=(
-                True if self._config.preprocessing_always_enabled else params.enable_preprocessing
-            ),
-            pace=pace,
-            pitch=None,
-            loudness=None,
-            temperature=None,
-            model=model,
-            voice=voice_id,
+            **kwargs,
         )
-        self._sync_model_name_to_metrics()
+
+        self._api_key = api_key
+        self._base_url = base_url
+        self._session = aiohttp_session
 
         # Add parameters based on model support
         if self._config.supports_pitch:
@@ -818,20 +822,7 @@ class SarvamTTSService(InterruptibleTTSService):
         if voice_id is None:
             voice_id = self._config.default_speaker
 
-        # Initialize parent class first
-        super().__init__(
-            aggregate_sentences=aggregate_sentences,
-            push_text_frames=True,
-            pause_frame_processing=True,
-            push_stop_frames=True,
-            sample_rate=sample_rate,
-            **kwargs,
-        )
         params = params or SarvamTTSService.InputParams()
-
-        # WebSocket endpoint URL with model query parameter
-        self._websocket_url = f"{url}?model={model}"
-        self._api_key = api_key
 
         # Validate and clamp pace to model's valid range
         pace = params.pace
@@ -840,27 +831,42 @@ class SarvamTTSService(InterruptibleTTSService):
             logger.warning(f"Pace {pace} is outside model range ({pace_min}-{pace_max}). Clamping.")
             pace = max(pace_min, min(pace_max, pace))
 
-        # Build base settings
-        self._settings = SarvamTTSSettings(
-            language=(
-                self.language_to_service_language(params.language) if params.language else "en-IN"
+        # Initialize parent class first
+        super().__init__(
+            aggregate_sentences=aggregate_sentences,
+            push_text_frames=True,
+            pause_frame_processing=True,
+            push_stop_frames=True,
+            sample_rate=sample_rate,
+            settings=SarvamTTSSettings(
+                language=(
+                    self.language_to_service_language(params.language)
+                    if params.language
+                    else "en-IN"
+                ),
+                speech_sample_rate=str(sample_rate),
+                enable_preprocessing=(
+                    True
+                    if self._config.preprocessing_always_enabled
+                    else params.enable_preprocessing
+                ),
+                min_buffer_size=params.min_buffer_size,
+                max_chunk_length=params.max_chunk_length,
+                output_audio_codec=params.output_audio_codec,
+                output_audio_bitrate=params.output_audio_bitrate,
+                pace=pace,
+                pitch=None,
+                loudness=None,
+                temperature=None,
+                model=model,
+                voice=voice_id,
             ),
-            speech_sample_rate=str(sample_rate),
-            enable_preprocessing=(
-                True if self._config.preprocessing_always_enabled else params.enable_preprocessing
-            ),
-            min_buffer_size=params.min_buffer_size,
-            max_chunk_length=params.max_chunk_length,
-            output_audio_codec=params.output_audio_codec,
-            output_audio_bitrate=params.output_audio_bitrate,
-            pace=pace,
-            pitch=None,
-            loudness=None,
-            temperature=None,
-            model=model,
-            voice=voice_id,
+            **kwargs,
         )
-        self._sync_model_name_to_metrics()
+
+        # WebSocket endpoint URL with model query parameter
+        self._websocket_url = f"{url}?model={model}"
+        self._api_key = api_key
 
         # Add parameters based on model support
         if self._config.supports_pitch:

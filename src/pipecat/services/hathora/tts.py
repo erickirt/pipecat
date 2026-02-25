@@ -107,23 +107,21 @@ class HathoraTTSService(TTSService):
             params: Configuration parameters.
             **kwargs: Additional arguments passed to the parent class.
         """
+        params = params or HathoraTTSService.InputParams()
+
         super().__init__(
             sample_rate=sample_rate,
+            settings=HathoraTTSSettings(
+                model=model,
+                voice=voice_id,
+                speed=params.speed,
+                config=params.config,
+            ),
             **kwargs,
         )
         self._model = model
         self._api_key = api_key or os.getenv("HATHORA_API_KEY")
         self._base_url = base_url
-
-        params = params or HathoraTTSService.InputParams()
-
-        self._settings = HathoraTTSSettings(
-            model=model,
-            voice=voice_id,
-            speed=params.speed,
-            config=params.config,
-        )
-        self._sync_model_name_to_metrics()
 
     def can_generate_metrics(self) -> bool:
         """Check if this service can generate processing metrics.

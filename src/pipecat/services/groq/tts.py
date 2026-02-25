@@ -99,27 +99,24 @@ class GroqTTSService(TTSService):
         if sample_rate != self.GROQ_SAMPLE_RATE:
             logger.warning(f"Groq TTS only supports {self.GROQ_SAMPLE_RATE}Hz sample rate. ")
 
+        params = params or GroqTTSService.InputParams()
+
         super().__init__(
             pause_frame_processing=True,
             sample_rate=sample_rate,
+            settings=GroqTTSSettings(
+                model=model_name,
+                voice=voice_id,
+                language=str(params.language) if params.language else "en",
+                output_format=output_format,
+                speed=params.speed,
+                groq_sample_rate=sample_rate,
+            ),
             **kwargs,
         )
 
-        params = params or GroqTTSService.InputParams()
-
         self._api_key = api_key
         self._output_format = output_format
-        self._params = params
-
-        self._settings = GroqTTSSettings(
-            model=model_name,
-            voice=voice_id,
-            language=str(params.language) if params.language else "en",
-            output_format=output_format,
-            speed=params.speed,
-            groq_sample_rate=sample_rate,
-        )
-        self._sync_model_name_to_metrics()
 
         self._client = AsyncGroq(api_key=self._api_key)
 

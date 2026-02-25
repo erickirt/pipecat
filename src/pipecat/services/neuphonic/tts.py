@@ -134,26 +134,26 @@ class NeuphonicTTSService(InterruptibleTTSService):
             aggregate_sentences: Whether to aggregate sentences within the TTSService.
             **kwargs: Additional arguments passed to parent InterruptibleTTSService.
         """
+        params = params or NeuphonicTTSService.InputParams()
+
         super().__init__(
             aggregate_sentences=aggregate_sentences,
             push_stop_frames=True,
             stop_frame_timeout_s=2.0,
             sample_rate=sample_rate,
+            settings=NeuphonicTTSSettings(
+                model=None,
+                language=self.language_to_service_language(params.language),
+                speed=params.speed,
+                encoding=encoding,
+                sampling_rate=sample_rate,
+                voice=voice_id,
+            ),
             **kwargs,
         )
 
-        params = params or NeuphonicTTSService.InputParams()
-
         self._api_key = api_key
         self._url = url
-        self._settings = NeuphonicTTSSettings(
-            model=None,
-            language=self.language_to_service_language(params.language),
-            speed=params.speed,
-            encoding=encoding,
-            sampling_rate=sample_rate,
-            voice=voice_id,
-        )
 
         self._cumulative_time = 0
 
@@ -443,21 +443,24 @@ class NeuphonicHttpTTSService(TTSService):
             params: Additional input parameters for TTS configuration.
             **kwargs: Additional arguments passed to parent TTSService.
         """
-        super().__init__(sample_rate=sample_rate, **kwargs)
-
         params = params or NeuphonicHttpTTSService.InputParams()
+
+        super().__init__(
+            sample_rate=sample_rate,
+            settings=NeuphonicTTSSettings(
+                model=None,
+                voice=voice_id,
+                language=self.language_to_service_language(params.language) or "en",
+                speed=params.speed,
+                encoding=encoding,
+                sampling_rate=sample_rate,
+            ),
+            **kwargs,
+        )
 
         self._api_key = api_key
         self._session = aiohttp_session
         self._base_url = url.rstrip("/")
-        self._settings = NeuphonicTTSSettings(
-            model=None,
-            voice=voice_id,
-            language=self.language_to_service_language(params.language) or "en",
-            speed=params.speed,
-            encoding=encoding,
-            sampling_rate=sample_rate,
-        )
 
     def can_generate_metrics(self) -> bool:
         """Check if this service can generate processing metrics.

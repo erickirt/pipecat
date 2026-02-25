@@ -115,10 +115,6 @@ class DeepgramSageMakerSTTService(STTService):
             **kwargs: Additional arguments passed to the parent STTService.
         """
         sample_rate = sample_rate or (live_options.sample_rate if live_options else None)
-        super().__init__(sample_rate=sample_rate, ttfs_p99_latency=ttfs_p99_latency, **kwargs)
-
-        self._endpoint_name = endpoint_name
-        self._region = region
 
         # Create default options similar to DeepgramSTTService
         default_options = LiveOptions(
@@ -144,12 +140,19 @@ class DeepgramSageMakerSTTService(STTService):
             merged_options["language"] = merged_options["language"].value
 
         merged_live_options = LiveOptions(**merged_options)
-        self._settings = DeepgramSageMakerSTTSettings(
-            model=merged_options.get("model"),
-            language=merged_options.get("language"),
-            live_options=merged_live_options,
+        super().__init__(
+            sample_rate=sample_rate,
+            ttfs_p99_latency=ttfs_p99_latency,
+            settings=DeepgramSageMakerSTTSettings(
+                model=merged_options.get("model"),
+                language=merged_options.get("language"),
+                live_options=merged_live_options,
+            ),
+            **kwargs,
         )
-        self._sync_model_name_to_metrics()
+
+        self._endpoint_name = endpoint_name
+        self._region = region
 
         self._client: Optional[SageMakerBidiClient] = None
         self._response_task: Optional[asyncio.Task] = None

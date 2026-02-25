@@ -150,15 +150,27 @@ class InworldHttpTTSService(TTSService):
             params: Input parameters for Inworld TTS configuration.
             **kwargs: Additional arguments passed to the parent class.
         """
+        params = params or InworldHttpTTSService.InputParams()
+
         super().__init__(
             push_text_frames=False,
             push_stop_frames=True,
             supports_word_timestamps=True,
             sample_rate=sample_rate,
+            settings=InworldTTSSettings(
+                model=model,
+                voice=voice_id,
+                language=None,
+                audio_encoding=encoding,
+                audio_sample_rate=0,
+                speaking_rate=params.speaking_rate,
+                temperature=params.temperature,
+                timestamp_transport_strategy=params.timestamp_transport_strategy,
+                auto_mode=None,  # Not applicable for HTTP TTS
+                apply_text_normalization=None,  # Not applicable for HTTP TTS
+            ),
             **kwargs,
         )
-
-        params = params or InworldHttpTTSService.InputParams()
 
         self._api_key = api_key
         self._session = aiohttp_session
@@ -170,22 +182,7 @@ class InworldHttpTTSService(TTSService):
         else:
             self._base_url = "https://api.inworld.ai/tts/v1/voice"
 
-        self._settings = InworldTTSSettings(
-            model=model,
-            voice=voice_id,
-            language=None,
-            audio_encoding=encoding,
-            audio_sample_rate=0,
-            speaking_rate=params.speaking_rate,
-            temperature=params.temperature,
-            timestamp_transport_strategy=params.timestamp_transport_strategy,
-            auto_mode=None,  # Not applicable for HTTP TTS
-            apply_text_normalization=None,  # Not applicable for HTTP TTS
-        )
-
         self._cumulative_time = 0.0
-
-        self._sync_model_name_to_metrics()
 
     def can_generate_metrics(self) -> bool:
         """Check if this service can generate processing metrics.
@@ -530,6 +527,8 @@ class InworldTTSService(AudioContextTTSService):
             append_trailing_space: Whether to append a trailing space to text before sending to TTS.
             **kwargs: Additional arguments passed to the parent class.
         """
+        params = params or InworldTTSService.InputParams()
+
         super().__init__(
             push_text_frames=False,
             push_stop_frames=True,
@@ -538,25 +537,23 @@ class InworldTTSService(AudioContextTTSService):
             sample_rate=sample_rate,
             aggregate_sentences=aggregate_sentences,
             append_trailing_space=append_trailing_space,
+            settings=InworldTTSSettings(
+                model=model,
+                voice=voice_id,
+                language=None,
+                audio_encoding=encoding,
+                audio_sample_rate=0,
+                speaking_rate=params.speaking_rate,
+                temperature=params.temperature,
+                apply_text_normalization=params.apply_text_normalization,
+                timestamp_transport_strategy=params.timestamp_transport_strategy,
+                auto_mode=params.auto_mode if params.auto_mode is not None else aggregate_sentences,
+            ),
             **kwargs,
         )
 
-        params = params or InworldTTSService.InputParams()
-
         self._api_key = api_key
         self._url = url
-        self._settings = InworldTTSSettings(
-            model=model,
-            voice=voice_id,
-            language=None,
-            audio_encoding=encoding,
-            audio_sample_rate=0,
-            speaking_rate=params.speaking_rate,
-            temperature=params.temperature,
-            apply_text_normalization=params.apply_text_normalization,
-            timestamp_transport_strategy=params.timestamp_transport_strategy,
-            auto_mode=params.auto_mode if params.auto_mode is not None else aggregate_sentences,
-        )
         self._timestamp_type = "WORD"
 
         self._buffer_settings = {
@@ -574,8 +571,6 @@ class InworldTTSService(AudioContextTTSService):
         self._cumulative_time = 0.0
         # Track the end time of the last word in the current generation
         self._generation_end_time = 0.0
-
-        self._sync_model_name_to_metrics()
 
     def can_generate_metrics(self) -> bool:
         """Check if this service can generate processing metrics.

@@ -147,30 +147,29 @@ class AsyncAITTSService(AudioContextTTSService):
             aggregate_sentences: Whether to aggregate sentences within the TTSService.
             **kwargs: Additional arguments passed to the parent service.
         """
+        params = params or AsyncAITTSService.InputParams()
+
         super().__init__(
             aggregate_sentences=aggregate_sentences,
             pause_frame_processing=True,
             push_stop_frames=True,
             sample_rate=sample_rate,
+            settings=AsyncAITTSSettings(
+                model=model,
+                voice=voice_id,
+                output_container=container,
+                output_encoding=encoding,
+                output_sample_rate=0,
+                language=self.language_to_service_language(params.language)
+                if params.language
+                else None,
+            ),
             **kwargs,
         )
-
-        params = params or AsyncAITTSService.InputParams()
 
         self._api_key = api_key
         self._api_version = version
         self._url = url
-        self._settings = AsyncAITTSSettings(
-            model=model,
-            voice=voice_id,
-            output_container=container,
-            output_encoding=encoding,
-            output_sample_rate=0,
-            language=self.language_to_service_language(params.language)
-            if params.language
-            else None,
-        )
-        self._sync_model_name_to_metrics()
 
         self._receive_task = None
         self._keepalive_task = None
@@ -501,24 +500,26 @@ class AsyncAIHttpTTSService(TTSService):
             params: Additional input parameters for voice customization.
             **kwargs: Additional arguments passed to the parent TTSService.
         """
-        super().__init__(sample_rate=sample_rate, **kwargs)
-
         params = params or AsyncAIHttpTTSService.InputParams()
+
+        super().__init__(
+            sample_rate=sample_rate,
+            settings=AsyncAITTSSettings(
+                model=model,
+                voice=voice_id,
+                output_container=container,
+                output_encoding=encoding,
+                output_sample_rate=0,
+                language=self.language_to_service_language(params.language)
+                if params.language
+                else None,
+            ),
+            **kwargs,
+        )
 
         self._api_key = api_key
         self._base_url = url
         self._api_version = version
-        self._settings = AsyncAITTSSettings(
-            model=model,
-            voice=voice_id,
-            output_container=container,
-            output_encoding=encoding,
-            output_sample_rate=0,
-            language=self.language_to_service_language(params.language)
-            if params.language
-            else None,
-        )
-        self._sync_model_name_to_metrics()
 
         self._session = aiohttp_session
 
