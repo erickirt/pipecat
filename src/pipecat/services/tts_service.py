@@ -1190,6 +1190,7 @@ class AudioContextTTSService(WebsocketTTSService):
     async def _handle_interruption(self, frame: InterruptionFrame, direction: FrameDirection):
         await super()._handle_interruption(frame, direction)
         await self._stop_audio_context_task()
+        await self.on_audio_context_interrupted(context_id=self._context_id)
         self.reset_active_audio_context()
         self._create_audio_context_task()
 
@@ -1218,6 +1219,7 @@ class AudioContextTTSService(WebsocketTTSService):
 
                 # We just finished processing the context, so we can safely remove it.
                 del self._contexts[context_id]
+                await self.on_audio_context_completed(context_id=context_id)
                 self.reset_active_audio_context()
 
                 # Append some silence between sentences.
@@ -1253,6 +1255,35 @@ class AudioContextTTSService(WebsocketTTSService):
                 # We didn't get audio, so let's consider this context finished.
                 logger.trace(f"{self} time out on audio context {context_id}")
                 break
+
+    async def on_audio_context_interrupted(self, context_id: str):
+        """Called when an audio context is cancelled due to an interruption.
+
+        Override this in a subclass to perform provider-specific cleanup (e.g.
+        sending a cancel/close message over the WebSocket) when the bot is
+        interrupted mid-speech.  The audio context task has already been stopped
+        and the active context has **not** yet been reset when this is called,
+        so ``context_id`` reflects the context that was cut short.
+
+        Args:
+            context_id: The ID of the audio context that was interrupted, or
+                ``None`` if no context was active at the time.
+        """
+        pass
+
+    async def on_audio_context_completed(self, context_id: str):
+        """Called after an audio context has finished playing all of its audio.
+
+        Override this in a subclass to perform provider-specific cleanup (e.g.
+        sending a close-context message to free server-side resources) once an
+        audio context has been fully processed.  The context entry has already
+        been removed from the internal context map, and the active context has
+        **not** yet been reset when this is called.
+
+        Args:
+            context_id: The ID of the audio context that finished processing.
+        """
+        pass
 
 
 class AudioContextWordTTSService(AudioContextTTSService):
