@@ -394,6 +394,8 @@ class ElevenLabsTTSService(AudioContextTTSService):
         # Finally, ElevenLabs doesn't provide information on when the bot stops
         # speaking for a while, so we want the parent class to send TTSStopFrame
         # after a short period not receiving any audio.
+        params = params or ElevenLabsTTSService.InputParams()
+
         super().__init__(
             aggregate_sentences=aggregate_sentences,
             push_text_frames=False,
@@ -401,30 +403,27 @@ class ElevenLabsTTSService(AudioContextTTSService):
             pause_frame_processing=True,
             supports_word_timestamps=True,
             sample_rate=sample_rate,
+            settings=ElevenLabsTTSSettings(
+                model=model,
+                voice=voice_id,
+                language=(
+                    self.language_to_service_language(params.language) if params.language else None
+                ),
+                stability=params.stability,
+                similarity_boost=params.similarity_boost,
+                style=params.style,
+                use_speaker_boost=params.use_speaker_boost,
+                speed=params.speed,
+                auto_mode=str(params.auto_mode).lower(),
+                enable_ssml_parsing=params.enable_ssml_parsing,
+                enable_logging=params.enable_logging,
+                apply_text_normalization=params.apply_text_normalization,
+            ),
             **kwargs,
         )
 
-        params = params or ElevenLabsTTSService.InputParams()
-
         self._api_key = api_key
         self._url = url
-        self._settings = ElevenLabsTTSSettings(
-            model=model,
-            voice=voice_id,
-            language=(
-                self.language_to_service_language(params.language) if params.language else None
-            ),
-            stability=params.stability,
-            similarity_boost=params.similarity_boost,
-            style=params.style,
-            use_speaker_boost=params.use_speaker_boost,
-            speed=params.speed,
-            auto_mode=str(params.auto_mode).lower(),
-            enable_ssml_parsing=params.enable_ssml_parsing,
-            enable_logging=params.enable_logging,
-            apply_text_normalization=params.apply_text_normalization,
-        )
-        self._sync_model_name_to_metrics()
 
         self._output_format = ""  # initialized in start()
         self._voice_settings = self._set_voice_settings()
@@ -910,37 +909,35 @@ class ElevenLabsHttpTTSService(TTSService):
             aggregate_sentences: Whether to aggregate sentences within the TTSService.
             **kwargs: Additional arguments passed to the parent service.
         """
+        params = params or ElevenLabsHttpTTSService.InputParams()
+
         super().__init__(
             aggregate_sentences=aggregate_sentences,
             push_text_frames=False,
             push_stop_frames=True,
             supports_word_timestamps=True,
             sample_rate=sample_rate,
+            settings=ElevenLabsHttpTTSSettings(
+                model=model,
+                voice=voice_id,
+                language=self.language_to_service_language(params.language)
+                if params.language
+                else None,
+                optimize_streaming_latency=params.optimize_streaming_latency,
+                stability=params.stability,
+                similarity_boost=params.similarity_boost,
+                style=params.style,
+                use_speaker_boost=params.use_speaker_boost,
+                speed=params.speed,
+                apply_text_normalization=params.apply_text_normalization,
+            ),
             **kwargs,
         )
 
-        params = params or ElevenLabsHttpTTSService.InputParams()
-
         self._api_key = api_key
         self._base_url = base_url
-        self._params = params
         self._session = aiohttp_session
 
-        self._settings = ElevenLabsHttpTTSSettings(
-            model=model,
-            voice=voice_id,
-            language=self.language_to_service_language(params.language)
-            if params.language
-            else None,
-            optimize_streaming_latency=params.optimize_streaming_latency,
-            stability=params.stability,
-            similarity_boost=params.similarity_boost,
-            style=params.style,
-            use_speaker_boost=params.use_speaker_boost,
-            speed=params.speed,
-            apply_text_normalization=params.apply_text_normalization,
-        )
-        self._sync_model_name_to_metrics()
         self._output_format = ""  # initialized in start()
         self._voice_settings = self._set_voice_settings()
         self._pronunciation_dictionary_locators = params.pronunciation_dictionary_locators

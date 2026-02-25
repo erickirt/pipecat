@@ -176,19 +176,21 @@ class UltravoxRealtimeLLMService(LLMService):
                 May only be set with OneShotInputParams.
             **kwargs: Additional arguments passed to parent LLMService.
         """
-        super().__init__(**kwargs)
-        self._settings = UltravoxRealtimeLLMSettings(
-            model=None,
-            temperature=None,
-            max_tokens=None,
-            top_p=None,
-            top_k=None,
-            frequency_penalty=None,
-            presence_penalty=None,
-            seed=None,
-            filter_incomplete_user_turns=False,
-            user_turn_completion_config=None,
-            output_medium=None,
+        super().__init__(
+            settings=UltravoxRealtimeLLMSettings(
+                model=None,
+                temperature=None,
+                max_tokens=None,
+                top_p=None,
+                top_k=None,
+                frequency_penalty=None,
+                presence_penalty=None,
+                seed=None,
+                filter_incomplete_user_turns=False,
+                user_turn_completion_config=None,
+                output_medium=None,
+            ),
+            **kwargs,
         )
         self._params = params
         if one_shot_selected_tools:

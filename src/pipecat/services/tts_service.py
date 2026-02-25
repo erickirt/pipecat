@@ -147,6 +147,7 @@ class TTSService(AIService):
         text_filter: Optional[BaseTextFilter] = None,
         # Audio transport destination of the generated frames.
         transport_destination: Optional[str] = None,
+        settings: Optional[TTSSettings] = None,
         **kwargs,
     ):
         """Initialize the TTS service.
@@ -183,9 +184,16 @@ class TTSService(AIService):
                     Use `text_filters` instead, which allows multiple filters.
 
             transport_destination: Destination for generated audio frames.
+            settings: The runtime-updatable settings for the TTS service.
             **kwargs: Additional arguments passed to the parent AIService.
         """
-        super().__init__(**kwargs)
+        super().__init__(
+            settings=settings
+            # Here in case subclass doesn't implement more specific settings
+            # (which hopefully should be rare)
+            or TTSSettings(),
+            **kwargs,
+        )
         self._aggregate_sentences: bool = aggregate_sentences
         self._push_text_frames: bool = push_text_frames
         self._push_stop_frames: bool = push_stop_frames
@@ -196,7 +204,6 @@ class TTSService(AIService):
         self._append_trailing_space: bool = append_trailing_space
         self._init_sample_rate = sample_rate
         self._sample_rate = 0
-        self._settings = TTSSettings()  # Here in case subclass doesn't implement more specific settings (hopefully shouldn't happen)
         self._text_aggregator: BaseTextAggregator = text_aggregator or SimpleTextAggregator()
         if text_aggregator:
             import warnings

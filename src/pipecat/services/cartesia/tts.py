@@ -305,6 +305,8 @@ class CartesiaTTSService(AudioContextTTSService):
         # if we're interrupted. Cartesia gives us word-by-word timestamps. We
         # can use those to generate text frames ourselves aligned with the
         # playout timing of the audio!
+        params = params or CartesiaTTSService.InputParams()
+
         super().__init__(
             aggregate_sentences=aggregate_sentences,
             push_text_frames=False,
@@ -312,6 +314,20 @@ class CartesiaTTSService(AudioContextTTSService):
             supports_word_timestamps=True,
             sample_rate=sample_rate,
             text_aggregator=text_aggregator,
+            settings=CartesiaTTSSettings(
+                model=model,
+                output_container=container,
+                output_encoding=encoding,
+                output_sample_rate=0,
+                language=self.language_to_service_language(params.language)
+                if params.language
+                else None,
+                speed=params.speed,
+                emotion=params.emotion,
+                generation_config=params.generation_config,
+                pronunciation_dict_id=params.pronunciation_dict_id,
+                voice=voice_id,
+            ),
             **kwargs,
         )
 
@@ -323,26 +339,9 @@ class CartesiaTTSService(AudioContextTTSService):
             #    and insert these tags for the purpose of the TTS service alone.
             self._text_aggregator = SkipTagsAggregator([("<spell>", "</spell>")])
 
-        params = params or CartesiaTTSService.InputParams()
-
         self._api_key = api_key
         self._cartesia_version = cartesia_version
         self._url = url
-        self._settings = CartesiaTTSSettings(
-            model=model,
-            output_container=container,
-            output_encoding=encoding,
-            output_sample_rate=0,
-            language=self.language_to_service_language(params.language)
-            if params.language
-            else None,
-            speed=params.speed,
-            emotion=params.emotion,
-            generation_config=params.generation_config,
-            pronunciation_dict_id=params.pronunciation_dict_id,
-            voice=voice_id,
-        )
-        self._sync_model_name_to_metrics()
 
         self._receive_task = None
 
@@ -727,28 +726,30 @@ class CartesiaHttpTTSService(TTSService):
             params: Additional input parameters for voice customization.
             **kwargs: Additional arguments passed to the parent TTSService.
         """
-        super().__init__(sample_rate=sample_rate, **kwargs)
-
         params = params or CartesiaHttpTTSService.InputParams()
+
+        super().__init__(
+            sample_rate=sample_rate,
+            settings=CartesiaTTSSettings(
+                model=model,
+                voice=voice_id,
+                output_container=container,
+                output_encoding=encoding,
+                output_sample_rate=0,
+                language=self.language_to_service_language(params.language)
+                if params.language
+                else None,
+                speed=params.speed,
+                emotion=params.emotion,
+                generation_config=params.generation_config,
+                pronunciation_dict_id=params.pronunciation_dict_id,
+            ),
+            **kwargs,
+        )
 
         self._api_key = api_key
         self._base_url = base_url
         self._cartesia_version = cartesia_version
-        self._settings = CartesiaTTSSettings(
-            model=model,
-            voice=voice_id,
-            output_container=container,
-            output_encoding=encoding,
-            output_sample_rate=0,
-            language=self.language_to_service_language(params.language)
-            if params.language
-            else None,
-            speed=params.speed,
-            emotion=params.emotion,
-            generation_config=params.generation_config,
-            pronunciation_dict_id=params.pronunciation_dict_id,
-        )
-        self._sync_model_name_to_metrics()
 
         self._client = AsyncCartesia(
             api_key=api_key,

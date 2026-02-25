@@ -261,27 +261,25 @@ class ElevenLabsSTTService(SegmentedSTTService):
                 Override for your deployment. See https://github.com/pipecat-ai/stt-benchmark
             **kwargs: Additional arguments passed to SegmentedSTTService.
         """
+        params = params or ElevenLabsSTTService.InputParams()
+
         super().__init__(
             sample_rate=sample_rate,
             ttfs_p99_latency=ttfs_p99_latency,
+            settings=ElevenLabsSTTSettings(
+                model=model,
+                language=self.language_to_service_language(params.language)
+                if params.language
+                else "eng",
+                tag_audio_events=params.tag_audio_events,
+            ),
             **kwargs,
         )
-
-        params = params or ElevenLabsSTTService.InputParams()
 
         self._api_key = api_key
         self._base_url = base_url
         self._session = aiohttp_session
         self._model_id = model
-
-        self._settings = ElevenLabsSTTSettings(
-            model=model,
-            language=self.language_to_service_language(params.language)
-            if params.language
-            else "eng",
-            tag_audio_events=params.tag_audio_events,
-        )
-        self._sync_model_name_to_metrics()
 
     def can_generate_metrics(self) -> bool:
         """Check if the service can generate processing metrics.
@@ -500,15 +498,27 @@ class ElevenLabsRealtimeSTTService(WebsocketSTTService):
                 Override for your deployment. See https://github.com/pipecat-ai/stt-benchmark
             **kwargs: Additional arguments passed to WebsocketSTTService.
         """
+        params = params or ElevenLabsRealtimeSTTService.InputParams()
+
         super().__init__(
             sample_rate=sample_rate,
             ttfs_p99_latency=ttfs_p99_latency,
             keepalive_timeout=10,
             keepalive_interval=5,
+            settings=ElevenLabsRealtimeSTTSettings(
+                model=model,
+                language=params.language_code,
+                commit_strategy=params.commit_strategy,
+                vad_silence_threshold_secs=params.vad_silence_threshold_secs,
+                vad_threshold=params.vad_threshold,
+                min_speech_duration_ms=params.min_speech_duration_ms,
+                min_silence_duration_ms=params.min_silence_duration_ms,
+                include_timestamps=params.include_timestamps,
+                enable_logging=params.enable_logging,
+                include_language_detection=params.include_language_detection,
+            ),
             **kwargs,
         )
-
-        params = params or ElevenLabsRealtimeSTTService.InputParams()
 
         self._api_key = api_key
         self._base_url = base_url
@@ -518,20 +528,6 @@ class ElevenLabsRealtimeSTTService(WebsocketSTTService):
 
         self._connected_event = asyncio.Event()
         self._connected_event.set()
-
-        self._settings = ElevenLabsRealtimeSTTSettings(
-            model=model,
-            language=params.language_code,
-            commit_strategy=params.commit_strategy,
-            vad_silence_threshold_secs=params.vad_silence_threshold_secs,
-            vad_threshold=params.vad_threshold,
-            min_speech_duration_ms=params.min_speech_duration_ms,
-            min_silence_duration_ms=params.min_silence_duration_ms,
-            include_timestamps=params.include_timestamps,
-            enable_logging=params.enable_logging,
-            include_language_detection=params.include_language_detection,
-        )
-        self._sync_model_name_to_metrics()
 
     def can_generate_metrics(self) -> bool:
         """Check if the service can generate processing metrics.

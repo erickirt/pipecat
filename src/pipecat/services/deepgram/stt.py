@@ -117,7 +117,6 @@ class DeepgramSTTService(STTService):
             The `vad_events` option in LiveOptions is deprecated as of version 0.0.99 and will be removed in a future version. Please use the Silero VAD instead.
         """
         sample_rate = sample_rate or (live_options.sample_rate if live_options else None)
-        super().__init__(sample_rate=sample_rate, ttfs_p99_latency=ttfs_p99_latency, **kwargs)
 
         if url:
             import warnings
@@ -155,12 +154,16 @@ class DeepgramSTTService(STTService):
             merged_options["language"] = merged_options["language"].value
 
         merged_live_options = LiveOptions(**merged_options)
-        self._settings = DeepgramSTTSettings(
-            model=merged_options.get("model"),
-            language=merged_options.get("language"),
-            live_options=merged_live_options,
+        super().__init__(
+            sample_rate=sample_rate,
+            ttfs_p99_latency=ttfs_p99_latency,
+            settings=DeepgramSTTSettings(
+                model=merged_options.get("model"),
+                language=merged_options.get("language"),
+                live_options=merged_live_options,
+            ),
+            **kwargs,
         )
-        self._sync_model_name_to_metrics()
 
         self._addons = addons
         self._should_interrupt = should_interrupt
