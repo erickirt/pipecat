@@ -372,17 +372,6 @@ class DeepgramSTTService(STTService):
         await self._connection.send(audio)
         yield None
 
-    def _build_live_options(self) -> LiveOptions:
-        """Build a ``LiveOptions`` from stored settings and sample rate.
-
-        Returns:
-            A fully-populated ``LiveOptions`` ready for the Deepgram SDK.
-        """
-        opts: dict[str, Any] = self._settings.live_options.to_dict()
-        opts["sample_rate"] = self.sample_rate
-
-        return LiveOptions(**opts)
-
     async def _connect(self):
         logger.debug("Connecting to Deepgram")
 
@@ -403,9 +392,11 @@ class DeepgramSTTService(STTService):
                 self._on_utterance_end,
             )
 
-        if not await self._connection.start(
-            options=self._build_live_options(), addons=self._addons
-        ):
+        live_options = LiveOptions(
+            **{**self._settings.live_options.to_dict(), "sample_rate": self.sample_rate}
+        )
+
+        if not await self._connection.start(options=live_options, addons=self._addons):
             await self.push_error(error_msg=f"Unable to connect to Deepgram")
         else:
             headers = {

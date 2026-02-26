@@ -336,17 +336,6 @@ class DeepgramSageMakerSTTService(STTService):
                 yield ErrorFrame(error=f"Unknown error occurred: {e}")
         yield None
 
-    def _build_live_options(self) -> LiveOptions:
-        """Build a ``LiveOptions`` from stored settings and sample rate.
-
-        Returns:
-            A fully-populated ``LiveOptions`` ready for the Deepgram SDK.
-        """
-        opts: dict[str, Any] = self._settings.live_options.to_dict()
-        opts["sample_rate"] = self.sample_rate
-
-        return LiveOptions(**opts)
-
     async def _connect(self):
         """Connect to the SageMaker endpoint and start the BiDi session.
 
@@ -356,9 +345,13 @@ class DeepgramSageMakerSTTService(STTService):
         """
         logger.debug("Connecting to Deepgram on SageMaker...")
 
+        live_options = LiveOptions(
+            **{**self._settings.live_options.to_dict(), "sample_rate": self.sample_rate}
+        )
+
         # Build query string from live_options, converting booleans to strings
         query_params = {}
-        for key, value in self._build_live_options().to_dict().items():
+        for key, value in live_options.to_dict().items():
             if value is not None:
                 # Convert boolean values to lowercase strings for Deepgram API
                 if isinstance(value, bool):
