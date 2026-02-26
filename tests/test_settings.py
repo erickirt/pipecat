@@ -407,6 +407,36 @@ class TestDeepgramSTTSettingsApplyUpdate:
         changed = current.apply_update(delta)
         assert changed == {}
 
+    def test_apply_update_top_level_model_takes_precedence_over_live_options(self):
+        """When both top-level model and live_options.model are set, top-level wins."""
+        current = self._make_store()
+        assert current.model == "nova-3-general"
+
+        delta = DeepgramSTTSettings(
+            model="nova-2",
+            live_options=LiveOptions(model="nova-3"),
+        )
+        changed = current.apply_update(delta)
+
+        assert current.model == "nova-2"
+        assert current.live_options.model == "nova-2"
+        assert "model" in changed
+
+    def test_apply_update_top_level_language_takes_precedence_over_live_options(self):
+        """When both top-level language and live_options.language are set, top-level wins."""
+        current = self._make_store()
+        assert current.language == "en"
+
+        delta = DeepgramSTTSettings(
+            language="fr",
+            live_options=LiveOptions(language="es"),
+        )
+        changed = current.apply_update(delta)
+
+        assert current.language == "fr"
+        assert current.live_options.language == "fr"
+        assert "language" in changed
+
 
 class TestDeepgramSTTSettingsFromMapping:
     def test_routes_live_options_kwargs(self):
@@ -482,43 +512,21 @@ class TestDeepgramSTTSettingsFromMapping:
 
 
 # ---------------------------------------------------------------------------
-# DeepgramSageMakerSTTSettings: same pattern
+# DeepgramSageMakerSTTSettings: smoke test that the shared base is inherited
 # ---------------------------------------------------------------------------
 
 
-class TestDeepgramSageMakerSTTSettingsApplyUpdate:
-    def _make_store(self, **lo_kwargs) -> DeepgramSageMakerSTTSettings:
-        defaults = dict(
-            encoding="linear16",
-            channels=1,
-            interim_results=True,
-            punctuate=True,
-        )
-        defaults.update(lo_kwargs)
-        return DeepgramSageMakerSTTSettings(
+class TestDeepgramSageMakerSTTSettings:
+    def test_inherits_live_options_behavior(self):
+        """Smoke test: SageMaker settings inherit the shared base correctly."""
+        store = DeepgramSageMakerSTTSettings(
             model="nova-3",
             language="en",
-            live_options=LiveOptions(**defaults),
+            live_options=LiveOptions(encoding="linear16", channels=1, punctuate=True),
         )
-
-    def test_apply_update_merges_live_options_as_delta(self):
-        current = self._make_store()
         delta = DeepgramSageMakerSTTSettings(live_options=LiveOptions(punctuate=False))
-        changed = current.apply_update(delta)
-        assert current.live_options.punctuate is False
+        changed = store.apply_update(delta)
+
+        assert store.live_options.punctuate is False
+        assert store.live_options.encoding == "linear16"
         assert "punctuate" in changed
-        assert current.live_options.encoding == "linear16"
-
-    def test_apply_update_syncs_model_from_live_options(self):
-        current = self._make_store()
-        delta = DeepgramSageMakerSTTSettings(live_options=LiveOptions(model="nova-2"))
-        current.apply_update(delta)
-        assert current.model == "nova-2"
-
-    def test_from_mapping_routes_correctly(self):
-        delta = DeepgramSageMakerSTTSettings.from_mapping(
-            {"model": "nova-2", "punctuate": False, "unknown": "val"}
-        )
-        assert delta.model == "nova-2"
-        assert delta.live_options.punctuate is False
-        assert delta.extra == {"unknown": "val"}

@@ -49,19 +49,20 @@ except ModuleNotFoundError as e:
 
 
 @dataclass
-class DeepgramSTTSettings(STTSettings):
-    """Settings for the Deepgram STT service.
+class _DeepgramSTTSettingsBase(STTSettings):
+    """Base settings for Deepgram STT services that use ``LiveOptions``.
+
+    Shared by ``DeepgramSTTSettings`` and ``DeepgramSageMakerSTTSettings``.
+    Not intended for other Deepgram services that don't use ``LiveOptions``.
 
     Wraps the Deepgram SDK's ``LiveOptions`` in a single ``live_options``
-    field.  All Deepgram-specific options (``filler_words``, ``diarize``,
-    ``utterance_end_ms``, etc.) should be passed directly via
-    ``LiveOptions``.
+    field and provides delta-merge semantics: when used as a delta (e.g.
+    via ``STTUpdateSettingsFrame``), only the non-None fields of
+    ``live_options`` are merged into the stored options rather than
+    replacing them wholesale.
 
-    In **delta mode** (i.e. when carried by ``STTUpdateSettingsFrame``),
-    ``live_options`` is treated as a **delta** — its non-None fields are
-    merged into the stored ``LiveOptions``, not replaced wholesale.  For
-    example, ``DeepgramSTTSettings(live_options=LiveOptions(punctuate=False))``
-    changes only ``punctuate`` and leaves all other options intact.
+    ``model`` and ``language`` are kept in sync bidirectionally between
+    the top-level settings fields and the nested ``live_options``.
 
     Parameters:
         live_options: Deepgram ``LiveOptions`` for STT configuration.
@@ -83,12 +84,56 @@ class DeepgramSTTSettings(STTSettings):
             }
         return cls._live_options_params
 
+    def _merge_live_options_delta(self, delta: LiveOptions) -> Dict[str, Any]:
+        """Merge a ``LiveOptions`` delta into the stored ``live_options``.
+
+        Non-None fields from *delta* overwrite corresponding fields in the
+        stored ``LiveOptions``.  ``model`` and ``language`` are synced to
+        the top-level settings fields when they change.
+
+        Args:
+            delta: A ``LiveOptions`` whose non-None fields are the desired
+                overrides.
+
+        Returns:
+            Dict mapping each changed key to its **previous** value (same
+            contract as ``apply_update``).
+        """
+        old_dict = self.live_options.to_dict()  # type: ignore[union-attr]
+        delta_dict = delta.to_dict()
+
+        # Deepgram SDK bug: model initialised to the *string* "None".
+        if delta_dict.get("model") == "None":
+            del delta_dict["model"]
+
+        if not delta_dict:
+            return {}
+
+        merged = {**old_dict, **delta_dict}
+        self.live_options = LiveOptions(**merged)
+
+        # Track what changed.
+        changed: Dict[str, Any] = {}
+        for key in delta_dict:
+            old_val = old_dict.get(key, NOT_GIVEN)
+            if old_val != delta_dict[key]:
+                changed[key] = old_val
+
+        # Sync model/language from live_options delta to top-level fields.
+        if "model" in delta_dict and delta_dict["model"] != self.model:
+            changed.setdefault("model", self.model)
+            self.model = delta_dict["model"]
+        if "language" in delta_dict and delta_dict["language"] != self.language:
+            changed.setdefault("language", self.language)
+            self.language = delta_dict["language"]
+
+        return changed
+
     def apply_update(self: _S, delta: _S) -> Dict[str, Any]:
         """Merge a delta into this store, with delta-merge for ``live_options``.
 
-        ``live_options`` is merged field-by-field (non-None fields from the
-        delta overwrite corresponding fields in the stored options) rather
-        than being replaced wholesale.
+        ``live_options`` is merged field-by-field via
+        ``_merge_live_options_delta`` rather than being replaced wholesale.
 
         ``model`` and ``language`` are kept in sync bidirectionally between
         the top-level settings fields and ``live_options``.
@@ -107,27 +152,17 @@ class DeepgramSTTSettings(STTSettings):
         if "language" in changed:
             self.live_options.language = self.language  # type: ignore[union-attr]
 
-        # Merge live_options delta.
+        # Merge live_options delta.  Top-level model/language take precedence
+        # over conflicting values in live_options, so write them into the
+        # delta before merging.
         if is_given(delta_lo):
-            old_dict = self.live_options.to_dict()  # type: ignore[union-attr]
-            delta_dict = delta_lo.to_dict()
+            if "model" in changed:
+                delta_lo.model = self.model
+            if "language" in changed:
+                delta_lo.language = self.language
 
-            if delta_dict:
-                merged = {**old_dict, **delta_dict}
-                self.live_options = LiveOptions(**merged)
-
-                for key in delta_dict:
-                    old_val = old_dict.get(key, NOT_GIVEN)
-                    if old_val != delta_dict[key]:
-                        changed[key] = old_val
-
-                # Sync model/language from live_options delta to top-level.
-                if "model" in delta_dict and delta_dict["model"] != self.model:
-                    changed.setdefault("model", self.model)
-                    self.model = delta_dict["model"]
-                if "language" in delta_dict and delta_dict["language"] != self.language:
-                    changed.setdefault("language", self.language)
-                    self.language = delta_dict["language"]
+            for key, old_val in self._merge_live_options_delta(delta_lo).items():
+                changed.setdefault(key, old_val)
 
         return changed
 
@@ -163,6 +198,16 @@ class DeepgramSTTSettings(STTSettings):
         instance = cls(**kwargs)
         instance.extra = extra
         return instance
+
+
+@dataclass
+class DeepgramSTTSettings(_DeepgramSTTSettingsBase):
+    """Settings for the Deepgram STT service.
+
+    See ``_DeepgramSTTSettingsBase`` for full documentation.
+    """
+
+    pass
 
 
 class DeepgramSTTService(STTService):
@@ -250,25 +295,13 @@ class DeepgramSTTService(STTService):
             vad_events=False,
         )
 
-        merged_dict = default_options.to_dict()
-        if live_options:
-            default_model = default_options.model
-            merged_dict.update(live_options.to_dict())
-            # NOTE(aleix): Fixes a bug in deepgram-sdk where `model` is initialized
-            # to the string "None" instead of the value `None`.
-            if "model" in merged_dict and merged_dict["model"] == "None":
-                merged_dict["model"] = default_model
-
-        if "language" in merged_dict and isinstance(merged_dict["language"], Language):
-            merged_dict["language"] = merged_dict["language"].value
-
-        # Sync model/language to top-level STTSettings fields
-        model = merged_dict.get("model")
-        language = merged_dict.get("language")
-
         settings = DeepgramSTTSettings(
-            model=model, language=language, live_options=LiveOptions(**merged_dict)
+            model=default_options.model,
+            language=default_options.language,
+            live_options=default_options,
         )
+        if live_options:
+            settings._merge_live_options_delta(live_options)
 
         super().__init__(
             sample_rate=sample_rate,
