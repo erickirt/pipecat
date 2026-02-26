@@ -262,10 +262,9 @@ class DeepgramSTTService(STTService):
         if "language" in merged_dict and isinstance(merged_dict["language"], Language):
             merged_dict["language"] = merged_dict["language"].value
 
-        # Extract model/language for top-level STTSettings fields; everything
-        # else lives inside LiveOptions.
-        model = merged_dict.pop("model", None)
-        language = merged_dict.pop("language", None)
+        # Sync model/language to top-level STTSettings fields
+        model = merged_dict.get("model")
+        language = merged_dict.get("language")
 
         settings = DeepgramSTTSettings(
             model=model, language=language, live_options=LiveOptions(**merged_dict)
@@ -380,10 +379,6 @@ class DeepgramSTTService(STTService):
             A fully-populated ``LiveOptions`` ready for the Deepgram SDK.
         """
         opts: dict[str, Any] = self._settings.live_options.to_dict()
-
-        # Overlay model/language from top-level settings and sample_rate from service.
-        opts["model"] = self._settings.model
-        opts["language"] = self._settings.language
         opts["sample_rate"] = self.sample_rate
 
         return LiveOptions(**opts)
