@@ -44,6 +44,7 @@ class FrameProcessorMetrics(BaseObject):
         self._task_manager = None
         self._start_ttfb_time = 0
         self._start_processing_time = 0
+        self._start_text_aggregation_time = 0
         self._last_ttfb_time = 0
         self._should_report_ttfb = True
 
@@ -223,10 +224,7 @@ class FrameProcessorMetrics(BaseObject):
         Returns:
             MetricsFrame containing text aggregation time, or None if not measuring.
         """
-        if (
-            not hasattr(self, "_start_text_aggregation_time")
-            or self._start_text_aggregation_time == 0
-        ):
+        if self._start_text_aggregation_time == 0:
             return None
 
         value = time.time() - self._start_text_aggregation_time

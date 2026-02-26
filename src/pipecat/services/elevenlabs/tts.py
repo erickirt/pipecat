@@ -389,9 +389,10 @@ class ElevenLabsTTSService(AudioContextTTSService):
         """
         # By default, we aggregate sentences before sending to TTS. This adds
         # ~200-300ms of latency per sentence (waiting for the sentence-ending
-        # punctuation token from the LLM). Setting aggregate_sentences=False
-        # streams tokens directly. To use this mode, you must set auto_mode=False.
-        # This eliminates aggregation time, but slows down ElevenLabs.
+        # punctuation token from the LLM). Setting
+        # text_aggregation_mode=TextAggregationMode.TOKEN streams tokens
+        # directly. To use this mode, you must set auto_mode=False. This
+        # eliminates aggregation time, but slows down ElevenLabs.
         #
         # We also don't want to automatically push LLM response text frames,
         # because the context aggregators will add them to the LLM context even

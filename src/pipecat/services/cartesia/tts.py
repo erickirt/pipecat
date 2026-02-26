@@ -303,9 +303,11 @@ class CartesiaTTSService(AudioContextTTSService):
         """
         # By default, we aggregate sentences before sending to TTS. This adds
         # ~200-300ms of latency per sentence (waiting for the sentence-ending
-        # punctuation token from the LLM). Setting aggregate_sentences=False
-        # streams tokens directly, which reduces latency. Streaming quality
-        # is good but less tested than sentence aggregation.
+        # punctuation token from the LLM). Setting
+        # text_aggregation_mode=TextAggregationMode.TOKEN streams tokens
+        # directly, which reduces latency. Streaming quality is good but less
+        # tested than sentence aggregation.
+        # TODO: Consider making TOKEN the default for Cartesia in 1.0.
         #
         # We also don't want to automatically push LLM response text frames,
         # because the context aggregators will add them to the LLM context even
@@ -667,9 +669,7 @@ class CartesiaTTSService(AudioContextTTSService):
 
             try:
                 await self._get_websocket().send(msg)
-                # Usage metrics are aggregated at flush time when streaming tokens.
-                if not self._is_streaming_tokens:
-                    await self.start_tts_usage_metrics(text)
+                await self.start_tts_usage_metrics(text)
             except Exception as e:
                 yield ErrorFrame(error=f"Unknown error occurred: {e}")
                 yield TTSStoppedFrame(context_id=context_id)

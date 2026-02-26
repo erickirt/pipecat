@@ -247,8 +247,6 @@ class TTSService(AIService):
             text_aggregation_mode = TextAggregationMode.SENTENCE
 
         self._text_aggregation_mode: TextAggregationMode = text_aggregation_mode
-        # Keep for backward compat with subclasses that read self._aggregate_sentences
-        self._aggregate_sentences: bool = text_aggregation_mode != TextAggregationMode.TOKEN
         self._push_text_frames: bool = push_text_frames
         self._push_stop_frames: bool = push_stop_frames
         self._stop_frame_timeout_s: float = stop_frame_timeout_s
@@ -296,8 +294,8 @@ class TTSService(AIService):
 
         self._processing_text: bool = False
         self._tts_contexts: Dict[str, TTSContext] = {}
-        self._streaming_text_log: str = ""
-        self._aggregation_logged: bool = False
+        self._streamed_text: str = ""
+        self._text_aggregation_metrics_started: bool = False
 
         # Word timestamp state (active when supports_word_timestamps=True)
         self._supports_word_timestamps: bool = supports_word_timestamps
@@ -315,6 +313,35 @@ class TTSService(AIService):
     def _is_streaming_tokens(self) -> bool:
         """Whether the service is streaming tokens directly without sentence aggregation."""
         return self._text_aggregation_mode == TextAggregationMode.TOKEN
+
+    async def start_tts_usage_metrics(self, text: str):
+        """Record TTS usage metrics.
+
+        When streaming tokens, usage metrics are aggregated and reported at
+        flush time instead of per token, so individual calls are skipped.
+
+        Args:
+            text: The text being processed by TTS.
+        """
+        if self._is_streaming_tokens:
+            return
+        await super().start_tts_usage_metrics(text)
+
+    async def start_text_aggregation_metrics(self):
+        """Start text aggregation metrics if not already started.
+
+        Only starts the metric once per LLM response. Skipped when streaming
+        tokens since per-token aggregation time is not meaningful.
+        """
+        if self._is_streaming_tokens or self._text_aggregation_metrics_started:
+            return
+        self._text_aggregation_metrics_started = True
+        await super().start_text_aggregation_metrics()
+
+    async def stop_text_aggregation_metrics(self):
+        """Stop text aggregation metrics and reset the started flag."""
+        self._text_aggregation_metrics_started = False
+        await super().stop_text_aggregation_metrics()
 
     @property
     def sample_rate(self) -> int:
@@ -574,9 +601,7 @@ class TTSService(AIService):
             and not isinstance(frame, InterimTranscriptionFrame)
             and not isinstance(frame, TranscriptionFrame)
         ):
-            if not self._is_streaming_tokens and not self._aggregation_logged:
-                await self.start_text_aggregation_metrics()
-                self._aggregation_logged = True
+            await self.start_text_aggregation_metrics()
             await self._process_text_frame(frame)
         elif isinstance(frame, InterruptionFrame):
             await self._handle_interruption(frame, direction)
@@ -592,18 +617,16 @@ class TTSService(AIService):
 
             # Flush any remaining text (including text waiting for lookahead)
             remaining = await self._text_aggregator.flush()
+            # Stop the aggregation metric (no-op if already stopped on first sentence).
+            await self.stop_text_aggregation_metrics()
             if remaining:
-                # If this is the first (and only) sentence, stop the aggregation metric.
-                await self.stop_text_aggregation_metrics()
                 await self._push_tts_frames(AggregatedTextFrame(remaining.text, remaining.type))
 
-            self._aggregation_logged = False
-
             # Log accumulated streamed text and emit aggregated usage metric.
-            if self._streaming_text_log:
-                logger.debug(f"{self}: Generating TTS [{self._streaming_text_log}]")
-                await self.start_tts_usage_metrics(self._streaming_text_log)
-                self._streaming_text_log = ""
+            if self._streamed_text:
+                logger.debug(f"{self}: Generating TTS [{self._streamed_text}]")
+                await super().start_tts_usage_metrics(self._streamed_text)
+                self._streamed_text = ""
 
             # Reset aggregator state
             self._processing_text = False
@@ -754,6 +777,8 @@ class TTSService(AIService):
             await filter.handle_interruption()
 
         self._llm_response_started = False
+        self._streamed_text = ""
+        self._text_aggregation_metrics_started = False
         if self._supports_word_timestamps:
             await self.reset_word_timestamps()
 
@@ -809,7 +834,7 @@ class TTSService(AIService):
 
         # Accumulate text for a single debug log at flush time when streaming tokens.
         if self._is_streaming_tokens:
-            self._streaming_text_log += text
+            self._streamed_text += text
 
         # Skip per-token processing metrics when streaming. The per-token
         # processing time is just websocket send overhead (~0.1ms) and not
