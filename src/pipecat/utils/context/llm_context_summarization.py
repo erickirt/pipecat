@@ -188,6 +188,8 @@ class LLMContextSummarizationUtil:
         total = 0
 
         for message in context.messages:
+            # LLMSpecificMessage holds service-specific data (e.g. thinking blocks,
+            # thought signatures). Skipping them here for now.
             if isinstance(message, LLMSpecificMessage):
                 continue
 
@@ -251,6 +253,9 @@ class LLMContextSummarizationUtil:
 
         for i in range(start_idx, len(messages)):
             msg = messages[i]
+            # LLMSpecificMessage instances (e.g. thinking blocks) never carry tool_call or
+            # tool_call_id fields, so they cannot affect the pending-call tracking. Skipping
+            # them avoids an AttributeError.
             if isinstance(msg, LLMSpecificMessage):
                 continue
 
@@ -302,7 +307,10 @@ class LLMContextSummarizationUtil:
         if len(messages) <= min_messages_to_keep:
             return LLMMessagesToSummarize(messages=[], last_summarized_index=-1)
 
-        # Find first system message index
+        # Find first system message index. LLMSpecificMessage instances are excluded because
+        # they are not dict-like and never represent a system message; they hold
+        # service-specific metadata (e.g. thinking blocks) that is always paired with a
+        # standard message.
         first_system_index = next(
             (
                 i
@@ -367,6 +375,11 @@ class LLMContextSummarizationUtil:
         transcript_parts = []
 
         for msg in messages:
+            # LLMSpecificMessage holds service-specific internal data (e.g. Anthropic thinking
+            # blocks, Gemini thought signatures). This data is not meaningful as plain text for
+            # a summarization transcript, and the summarizer LLM would not know how to interpret
+            # it. The conversational content of those turns is already captured by the
+            # accompanying standard assistant message.
             if isinstance(msg, LLMSpecificMessage):
                 continue
 
