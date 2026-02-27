@@ -6,9 +6,10 @@
 
 """This module defines a summarizer for managing LLM context summarization."""
 
+import asyncio
 import uuid
 from dataclasses import dataclass
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from loguru import logger
 
@@ -26,6 +27,9 @@ from pipecat.utils.context.llm_context_summarization import (
     LLMContextSummarizationConfig,
     LLMContextSummarizationUtil,
 )
+
+if TYPE_CHECKING:
+    from pipecat.services.llm_service import LLMService
 
 
 @dataclass
@@ -227,8 +231,10 @@ class LLMContextSummarizer(BaseObject):
     async def _request_summarization(self):
         """Request context summarization from LLM service.
 
-        Creates a summarization request frame and emits it via event handler.
-        Tracks the request ID to match async responses and prevent race conditions.
+        Creates a summarization request frame and either handles it directly
+        using a dedicated LLM (if configured) or emits it via event handler
+        for the pipeline's primary LLM. Tracks the request ID to match async
+        responses and prevent race conditions.
         """
         # Generate unique request ID
         request_id = str(uuid.uuid4())
@@ -250,8 +256,61 @@ class LLMContextSummarizer(BaseObject):
             summarization_timeout=self._config.summarization_timeout,
         )
 
-        # Emit event for aggregator to broadcast
-        await self._call_event_handler("on_request_summarization", request_frame)
+        if self._config.llm:
+            # Use dedicated LLM directly — no need to involve the pipeline
+            self.task_manager.create_task(
+                self._generate_summary_with_dedicated_llm(self._config.llm, request_frame),
+                f"{self}-dedicated-llm-summary",
+            )
+        else:
+            # Emit event for aggregator to broadcast to the pipeline LLM
+            await self._call_event_handler("on_request_summarization", request_frame)
+
+    async def _generate_summary_with_dedicated_llm(
+        self, llm: "LLMService", frame: LLMContextSummaryRequestFrame
+    ):
+        """Generate summary using a dedicated LLM service.
+
+        Calls the dedicated LLM's _generate_summary directly and feeds the
+        result back through _handle_summary_result, bypassing the pipeline.
+
+        Args:
+            llm: The dedicated LLM service to use for summarization.
+            frame: The summarization request frame.
+        """
+        try:
+            if frame.summarization_timeout:
+                summary, last_index = await asyncio.wait_for(
+                    llm._generate_summary(frame),
+                    timeout=frame.summarization_timeout,
+                )
+            else:
+                summary, last_index = await llm._generate_summary(frame)
+            result_frame = LLMContextSummaryResultFrame(
+                request_id=frame.request_id,
+                summary=summary,
+                last_summarized_index=last_index,
+            )
+        except asyncio.TimeoutError:
+            error = f"Context summarization timed out after {frame.summarization_timeout}s"
+            logger.error(f"{self}: {error}")
+            result_frame = LLMContextSummaryResultFrame(
+                request_id=frame.request_id,
+                summary="",
+                last_summarized_index=-1,
+                error=error,
+            )
+        except Exception as e:
+            error = f"Error generating context summary: {e}"
+            logger.error(f"{self}: {error}")
+            result_frame = LLMContextSummaryResultFrame(
+                request_id=frame.request_id,
+                summary="",
+                last_summarized_index=-1,
+                error=error,
+            )
+
+        await self._handle_summary_result(result_frame)
 
     async def _handle_summary_result(self, frame: LLMContextSummaryResultFrame):
         """Handle context summarization result from LLM service.
