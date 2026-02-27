@@ -218,6 +218,7 @@ class LLMContextSummarizer(BaseObject):
             min_messages_to_keep=min_keep,
             target_context_tokens=self._config.target_context_tokens,
             summarization_prompt=self._config.summary_prompt,
+            summarization_timeout=self._config.summarization_timeout,
         )
 
         # Emit event for aggregator to broadcast

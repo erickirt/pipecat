@@ -2019,6 +2019,8 @@ class LLMContextSummaryRequestFrame(ControlFrame):
             the summary text.
         summarization_prompt: System prompt instructing the LLM how to generate
             the summary.
+        summarization_timeout: Maximum time in seconds for the LLM to generate a
+            summary. None means no timeout.
     """
 
     request_id: str
@@ -2026,6 +2028,7 @@ class LLMContextSummaryRequestFrame(ControlFrame):
     min_messages_to_keep: int
     target_context_tokens: int
     summarization_prompt: str
+    summarization_timeout: Optional[float] = None
 
 
 @dataclass

@@ -1284,20 +1284,35 @@ class LLMAssistantAggregator(LLMContextAggregator):
             frame: The summarization request frame.
         """
         try:
-            summary, last_index = await llm._generate_summary(frame)
+            if frame.summarization_timeout:
+                summary, last_index = await asyncio.wait_for(
+                    llm._generate_summary(frame),
+                    timeout=frame.summarization_timeout,
+                )
+            else:
+                summary, last_index = await llm._generate_summary(frame)
             result_frame = LLMContextSummaryResultFrame(
                 request_id=frame.request_id,
                 summary=summary,
                 last_summarized_index=last_index,
             )
-        except Exception as e:
-            error = f"Error generating context summary: {e}"
-            await self.push_error(error, exception=e)
+        except asyncio.TimeoutError:
+            error = f"Context summarization timed out after {frame.summarization_timeout}s"
+            logger.error(f"{self}: {error}")
             result_frame = LLMContextSummaryResultFrame(
                 request_id=frame.request_id,
                 summary="",
                 last_summarized_index=-1,
-                error=f"Error generating context summary: {e}",
+                error=error,
+            )
+        except Exception as e:
+            error = f"Error generating context summary: {e}"
+            await self.push_error(error_msg=error, exception=e)
+            result_frame = LLMContextSummaryResultFrame(
+                request_id=frame.request_id,
+                summary="",
+                last_summarized_index=-1,
+                error=error,
             )
 
         if self._summarizer:

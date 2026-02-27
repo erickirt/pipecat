@@ -437,7 +437,17 @@ class LLMService(UserTurnCompletionLLMServiceMixin, AIService):
         error = None
 
         try:
-            summary, last_index = await self._generate_summary(frame)
+            if frame.summarization_timeout:
+                summary, last_index = await asyncio.wait_for(
+                    self._generate_summary(frame),
+                    timeout=frame.summarization_timeout,
+                )
+            else:
+                summary, last_index = await self._generate_summary(frame)
+        except asyncio.TimeoutError:
+            await self.push_error(
+                error_msg=f"Context summarization timed out after {frame.summarization_timeout}s"
+            )
         except Exception as e:
             error = f"Error generating context summary: {e}"
             await self.push_error(error, exception=e)

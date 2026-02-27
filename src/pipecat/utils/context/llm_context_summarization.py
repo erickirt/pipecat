@@ -86,6 +86,10 @@ class LLMContextSummarizationConfig:
             pipeline's primary LLM. Useful for routing summarization to a
             cheaper/faster model (e.g., Gemini Flash) while keeping an
             expensive model for conversation. If None, uses the pipeline LLM.
+        summarization_timeout: Maximum time in seconds to wait for the LLM to
+            generate a summary. If the call exceeds this timeout, summarization
+            is aborted with an error and future summarizations are unblocked.
+            Set to None to disable the timeout.
     """
 
     max_context_tokens: int = 8000
@@ -95,6 +99,7 @@ class LLMContextSummarizationConfig:
     summarization_prompt: Optional[str] = None
     summary_message_template: str = "Conversation summary: {summary}"
     llm: Optional["LLMService"] = None
+    summarization_timeout: Optional[float] = 120.0
 
     def __post_init__(self):
         """Validate configuration parameters."""
