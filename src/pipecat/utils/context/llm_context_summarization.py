@@ -73,6 +73,11 @@ class LLMContextSummarizationConfig:
             immediate conversational context.
         summarization_prompt: Custom prompt for the LLM to use when generating
             summaries. If None, uses DEFAULT_SUMMARIZATION_PROMPT.
+        summary_message_template: Template for formatting the summary when
+            injected into context. Must contain ``{summary}`` as a placeholder
+            for the generated summary text. Allows applications to wrap the
+            summary in custom delimiters (e.g., XML tags) so that system
+            prompts can distinguish summaries from live conversation.
     """
 
     max_context_tokens: int = 8000
@@ -80,6 +85,7 @@ class LLMContextSummarizationConfig:
     max_unsummarized_messages: int = 20
     min_messages_after_summary: int = 4
     summarization_prompt: Optional[str] = None
+    summary_message_template: str = "Conversation summary: {summary}"
 
     def __post_init__(self):
         """Validate configuration parameters."""
