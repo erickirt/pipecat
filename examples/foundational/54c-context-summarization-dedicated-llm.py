@@ -4,12 +4,14 @@
 # SPDX-License-Identifier: BSD 2-Clause License
 #
 
-"""Example demonstrating context summarization feature.
+"""Example demonstrating advanced context summarization configuration.
 
-This example shows how to enable and configure context summarization to automatically
-compress conversation history when token limits are approached. It also demonstrates
-that summarization correctly handles function calls, preserving incomplete function
-call sequences.
+This example shows how to customize context summarization with:
+- A dedicated cheap/fast LLM for generating summaries (Gemini Flash)
+- A custom summary message template (XML tags)
+- A custom summarization prompt
+- A summarization timeout
+- The on_summary_applied event for observability
 """
 
 import asyncio
@@ -38,6 +40,7 @@ from pipecat.services.cartesia.tts import CartesiaTTSService
 from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.google import GoogleLLMService
 from pipecat.services.llm_service import FunctionCallParams
+from pipecat.services.openai.llm import OpenAILLMService
 from pipecat.transports.base_transport import BaseTransport, TransportParams
 from pipecat.transports.daily.transport import DailyParams
 from pipecat.transports.websocket.fastapi import FastAPIWebsocketParams
@@ -62,10 +65,19 @@ transport_params = {
     ),
 }
 
+# Custom summarization prompt tailored to the application
+CUSTOM_SUMMARIZATION_PROMPT = """Summarize this conversation, preserving:
+- Key decisions and agreements
+- Important facts and user preferences
+- Any pending action items or unresolved questions
+
+Be concise. Use clear, factual statements grouped by topic.
+Omit greetings, small talk, and resolved tangents."""
+
 
 # Tool functions for the LLM
 async def get_current_weather(params: FunctionCallParams):
-    """Get the current time in a readable format."""
+    """Get the current weather."""
     logger.info("Tool called: get_current_weather")
     await asyncio.sleep(1)  # Simulate some processing
     await params.result_callback({"conditions": "nice", "temperature": "75"})
@@ -81,7 +93,14 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         voice_id="71a7ad14-091c-4e8e-a314-022ece01c121",  # British Reading Lady
     )
 
-    llm = GoogleLLMService(api_key=os.getenv("GOOGLE_API_KEY"))
+    # Primary LLM for conversation (could be any provider)
+    llm = OpenAILLMService(api_key=os.getenv("OPENAI_API_KEY"))
+
+    # Dedicated cheap/fast LLM for summarization only
+    summarization_llm = GoogleLLMService(
+        api_key=os.getenv("GOOGLE_API_KEY"),
+        model="gemini-2.5-flash",
+    )
 
     # Register tool functions
     llm.register_function("get_current_weather", get_current_weather)
@@ -107,13 +126,21 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
     messages = [
         {
             "role": "system",
-            "content": "You are a helpful LLM in a WebRTC call. Your goal is to demonstrate your capabilities in a succinct way. Your output will be spoken aloud, so avoid special characters that can't easily be spoken, such as emojis or bullet points. Respond to what the user said in a creative and helpful way. You have access to tools to get the current weather - use them when relevant.",
+            "content": (
+                "You are a helpful LLM in a WebRTC call. Your goal is to demonstrate "
+                "your capabilities in a succinct way. Your output will be spoken aloud, "
+                "so avoid special characters that can't easily be spoken. Respond to what "
+                "the user said in a creative and helpful way. You have access to tools to "
+                "get the current weather - use them when relevant.\n\n"
+                "When you see a <context_summary> block, it contains a compressed summary "
+                "of earlier conversation. Use it as reference but don't mention it to the user."
+            ),
         },
     ]
 
     context = LLMContext(messages, tools=tools)
 
-    # Create aggregators with summarization enabled
+    # Create aggregators with custom summarization
     user_aggregator, assistant_aggregator = LLMContextAggregatorPair(
         context,
         user_params=LLMUserAggregatorParams(
@@ -121,13 +148,22 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         ),
         assistant_params=LLMAssistantAggregatorParams(
             enable_context_summarization=True,
-            # Optional: customize context summarization behavior
-            # Using low limits to demonstrate the feature quickly
             context_summarization_config=LLMContextSummarizationConfig(
-                max_context_tokens=1000,  # Trigger summarization at 1000 tokens
-                target_context_tokens=800,  # Target context size for the summarization
-                max_unsummarized_messages=10,  # Or when 10 new messages accumulate
-                min_messages_after_summary=2,  # Keep last 2 messages uncompressed
+                # Trigger thresholds (low values to demonstrate quickly)
+                max_context_tokens=1000,
+                max_unsummarized_messages=10,
+                # Summary generation
+                target_context_tokens=800,
+                min_messages_after_summary=2,
+                summarization_prompt=CUSTOM_SUMMARIZATION_PROMPT,
+                # Custom summary format - wrap in XML tags so the system
+                # prompt can identify summaries vs. live conversation
+                summary_message_template="<context_summary>\n{summary}\n</context_summary>",
+                # Use a dedicated cheap LLM for summarization instead of
+                # the primary conversation model
+                llm=summarization_llm,
+                # Cancel summarization if it takes longer than 60 seconds
+                summarization_timeout=60.0,
             ),
         ),
     )
