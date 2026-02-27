@@ -18,7 +18,7 @@ from pipecat.frames.frames import (
     LLMContextSummaryResultFrame,
     LLMFullResponseStartFrame,
 )
-from pipecat.processors.aggregators.llm_context import LLMContext
+from pipecat.processors.aggregators.llm_context import LLMContext, LLMSpecificMessage
 from pipecat.utils.asyncio.task_manager import BaseTaskManager
 from pipecat.utils.base_object import BaseObject
 from pipecat.utils.context.llm_context_summarization import (
@@ -290,8 +290,18 @@ class LLMContextSummarizer(BaseObject):
         """
         messages = self._context.messages
 
-        # Find the first system message to preserve
-        first_system_msg = next((msg for msg in messages if msg.get("role") == "system"), None)
+        # Find the first system message to preserve. LLMSpecificMessage instances are excluded
+        # because they are not dict-like and never represent a system message; they hold
+        # service-specific metadata (e.g. thinking blocks) that is always paired with a
+        # standard message.
+        first_system_msg = next(
+            (
+                msg
+                for msg in messages
+                if not isinstance(msg, LLMSpecificMessage) and msg.get("role") == "system"
+            ),
+            None,
+        )
 
         # Get recent messages to keep
         recent_messages = messages[last_summarized_index + 1 :]
