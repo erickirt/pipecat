@@ -44,7 +44,10 @@ from pipecat.services.openai.llm import OpenAILLMService
 from pipecat.transports.base_transport import BaseTransport, TransportParams
 from pipecat.transports.daily.transport import DailyParams
 from pipecat.transports.websocket.fastapi import FastAPIWebsocketParams
-from pipecat.utils.context.llm_context_summarization import LLMContextSummarizationConfig
+from pipecat.utils.context.llm_context_summarization import (
+    LLMAutoContextSummarizationConfig,
+    LLMContextSummaryConfig,
+)
 
 load_dotenv(override=True)
 
@@ -147,23 +150,25 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
             vad_analyzer=SileroVADAnalyzer(),
         ),
         assistant_params=LLMAssistantAggregatorParams(
-            enable_context_summarization=True,
-            context_summarization_config=LLMContextSummarizationConfig(
+            enable_auto_context_summarization=True,
+            auto_context_summarization_config=LLMAutoContextSummarizationConfig(
                 # Trigger thresholds (low values to demonstrate quickly)
                 max_context_tokens=1000,
                 max_unsummarized_messages=10,
-                # Summary generation
-                target_context_tokens=800,
-                min_messages_after_summary=2,
-                summarization_prompt=CUSTOM_SUMMARIZATION_PROMPT,
-                # Custom summary format - wrap in XML tags so the system
-                # prompt can identify summaries vs. live conversation
-                summary_message_template="<context_summary>\n{summary}\n</context_summary>",
-                # Use a dedicated cheap LLM for summarization instead of
-                # the primary conversation model
-                llm=summarization_llm,
-                # Cancel summarization if it takes longer than 60 seconds
-                summarization_timeout=60.0,
+                summary_config=LLMContextSummaryConfig(
+                    # Summary generation
+                    target_context_tokens=800,
+                    min_messages_after_summary=2,
+                    summarization_prompt=CUSTOM_SUMMARIZATION_PROMPT,
+                    # Custom summary format - wrap in XML tags so the system
+                    # prompt can identify summaries vs. live conversation
+                    summary_message_template="<context_summary>\n{summary}\n</context_summary>",
+                    # Use a dedicated cheap LLM for summarization instead of
+                    # the primary conversation model
+                    llm=summarization_llm,
+                    # Cancel summarization if it takes longer than 60 seconds
+                    summarization_timeout=60.0,
+                ),
             ),
         ),
     )

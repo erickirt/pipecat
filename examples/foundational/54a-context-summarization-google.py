@@ -41,7 +41,10 @@ from pipecat.services.llm_service import FunctionCallParams
 from pipecat.transports.base_transport import BaseTransport, TransportParams
 from pipecat.transports.daily.transport import DailyParams
 from pipecat.transports.websocket.fastapi import FastAPIWebsocketParams
-from pipecat.utils.context.llm_context_summarization import LLMContextSummarizationConfig
+from pipecat.utils.context.llm_context_summarization import (
+    LLMAutoContextSummarizationConfig,
+    LLMContextSummaryConfig,
+)
 
 load_dotenv(override=True)
 
@@ -120,14 +123,16 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
             vad_analyzer=SileroVADAnalyzer(),
         ),
         assistant_params=LLMAssistantAggregatorParams(
-            enable_context_summarization=True,
+            enable_auto_context_summarization=True,
             # Optional: customize context summarization behavior
             # Using low limits to demonstrate the feature quickly
-            context_summarization_config=LLMContextSummarizationConfig(
+            auto_context_summarization_config=LLMAutoContextSummarizationConfig(
                 max_context_tokens=1000,  # Trigger summarization at 1000 tokens
-                target_context_tokens=800,  # Target context size for the summarization
                 max_unsummarized_messages=10,  # Or when 10 new messages accumulate
-                min_messages_after_summary=2,  # Keep last 2 messages uncompressed
+                summary_config=LLMContextSummaryConfig(
+                    target_context_tokens=800,  # Target context size for the summarization
+                    min_messages_after_summary=2,  # Keep last 2 messages uncompressed
+                ),
             ),
         ),
     )
