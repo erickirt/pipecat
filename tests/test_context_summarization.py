@@ -6,10 +6,11 @@
 
 """Tests for context summarization feature."""
 
+import asyncio
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
-from pipecat.frames.frames import LLMContextSummaryRequestFrame
+from pipecat.frames.frames import LLMContextSummaryRequestFrame, LLMContextSummaryResultFrame
 from pipecat.processors.aggregators.llm_context import LLMContext, LLMSpecificMessage
 from pipecat.services.llm_service import LLMService
 from pipecat.utils.context.llm_context_summarization import (
@@ -600,6 +601,301 @@ class TestSummaryGenerationExceptions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(summary, "This is a summary of the conversation")
         self.assertGreater(last_index, -1)
         self.assertEqual(last_index, 1)  # Should be the index of the last summarized message
+
+    async def test_generate_summary_task_timeout(self):
+        """Test that _generate_summary_task handles timeout correctly."""
+        llm_service = LLMService()
+
+        # Mock _generate_summary to hang
+        async def slow_summary(frame):
+            await asyncio.sleep(10)
+            return ("summary", 1)
+
+        llm_service._generate_summary = slow_summary
+
+        broadcast_calls = []
+
+        async def mock_broadcast(frame_class, **kwargs):
+            broadcast_calls.append((frame_class, kwargs))
+
+        llm_service.broadcast_frame = mock_broadcast
+        llm_service.push_error = AsyncMock()
+
+        context = LLMContext()
+        context.add_message({"role": "user", "content": "Message 1"})
+        context.add_message({"role": "assistant", "content": "Response 1"})
+        context.add_message({"role": "user", "content": "Message 2"})
+
+        frame = LLMContextSummaryRequestFrame(
+            request_id="timeout_test",
+            context=context,
+            min_messages_to_keep=1,
+            target_context_tokens=1000,
+            summarization_prompt="Summarize this",
+            summarization_timeout=0.1,  # Very short timeout
+        )
+
+        await llm_service._generate_summary_task(frame)
+
+        # Should have broadcast an error result
+        self.assertEqual(len(broadcast_calls), 1)
+        _, kwargs = broadcast_calls[0]
+        self.assertEqual(kwargs["request_id"], "timeout_test")
+        self.assertEqual(kwargs["summary"], "")
+        self.assertEqual(kwargs["last_summarized_index"], -1)
+        # error is None for timeout path (push_error is called instead)
+        self.assertIsNone(kwargs["error"])
+
+        # push_error should have been called with timeout message
+        llm_service.push_error.assert_called_once()
+        call_args = llm_service.push_error.call_args
+        error_msg = call_args.kwargs.get("error_msg") or call_args.args[0]
+        self.assertIn("timed out", error_msg)
+
+
+class TestDedicatedLLMSummarization(unittest.IsolatedAsyncioTestCase):
+    """Tests for dedicated LLM summarization in LLMAssistantAggregator."""
+
+    def _create_context_and_frame(self):
+        """Create a context with enough messages and a matching request frame."""
+        context = LLMContext()
+        context.add_message({"role": "user", "content": "Message 1"})
+        context.add_message({"role": "assistant", "content": "Response 1"})
+        context.add_message({"role": "user", "content": "Message 2"})
+
+        frame = LLMContextSummaryRequestFrame(
+            request_id="dedicated_test",
+            context=context,
+            min_messages_to_keep=1,
+            target_context_tokens=1000,
+            summarization_prompt="Summarize this",
+            summarization_timeout=5.0,
+        )
+        return context, frame
+
+    async def test_dedicated_llm_success(self):
+        """Test that dedicated LLM generates summary and feeds result to summarizer."""
+        from pipecat.processors.aggregators.llm_context_summarizer import LLMContextSummarizer
+        from pipecat.processors.aggregators.llm_response_universal import (
+            LLMAssistantAggregator,
+            LLMAssistantAggregatorParams,
+        )
+        from pipecat.utils.asyncio.task_manager import TaskManager, TaskManagerParams
+
+        context, frame = self._create_context_and_frame()
+
+        # Create a mock dedicated LLM
+        dedicated_llm = LLMService()
+        dedicated_llm._generate_summary = AsyncMock(return_value=("Dedicated summary", 1))
+
+        config = LLMContextSummarizationConfig(
+            max_context_tokens=50,
+            llm=dedicated_llm,
+        )
+        params = LLMAssistantAggregatorParams(
+            enable_context_summarization=True,
+            context_summarization_config=config,
+        )
+        aggregator = LLMAssistantAggregator(context, params=params)
+
+        # Mock summarizer.process_frame to capture the result
+        result_frames = []
+        original_process = aggregator._summarizer.process_frame
+
+        async def capture_process(frame):
+            result_frames.append(frame)
+            await original_process(frame)
+
+        aggregator._summarizer.process_frame = capture_process
+
+        # Call the method directly
+        await aggregator._generate_summary_with_dedicated_llm(dedicated_llm, frame)
+
+        # Verify the dedicated LLM was called
+        dedicated_llm._generate_summary.assert_called_once_with(frame)
+
+        # Verify result was fed to the summarizer
+        self.assertEqual(len(result_frames), 1)
+        result = result_frames[0]
+        self.assertIsInstance(result, LLMContextSummaryResultFrame)
+        self.assertEqual(result.request_id, "dedicated_test")
+        self.assertEqual(result.summary, "Dedicated summary")
+        self.assertEqual(result.last_summarized_index, 1)
+        self.assertIsNone(result.error)
+
+    async def test_dedicated_llm_timeout(self):
+        """Test that dedicated LLM timeout produces error result."""
+        from pipecat.processors.aggregators.llm_response_universal import (
+            LLMAssistantAggregator,
+            LLMAssistantAggregatorParams,
+        )
+
+        context, _ = self._create_context_and_frame()
+
+        # Create a mock dedicated LLM that hangs
+        dedicated_llm = LLMService()
+
+        async def slow_summary(frame):
+            await asyncio.sleep(10)
+            return ("summary", 1)
+
+        dedicated_llm._generate_summary = slow_summary
+
+        config = LLMContextSummarizationConfig(
+            max_context_tokens=50,
+            llm=dedicated_llm,
+        )
+        params = LLMAssistantAggregatorParams(
+            enable_context_summarization=True,
+            context_summarization_config=config,
+        )
+        aggregator = LLMAssistantAggregator(context, params=params)
+
+        # Mock summarizer.process_frame to capture the result
+        result_frames = []
+
+        async def capture_process(frame):
+            result_frames.append(frame)
+
+        aggregator._summarizer.process_frame = capture_process
+
+        # Create frame with very short timeout
+        frame = LLMContextSummaryRequestFrame(
+            request_id="timeout_test",
+            context=context,
+            min_messages_to_keep=1,
+            target_context_tokens=1000,
+            summarization_prompt="Summarize this",
+            summarization_timeout=0.1,
+        )
+
+        await aggregator._generate_summary_with_dedicated_llm(dedicated_llm, frame)
+
+        # Verify error result was fed to summarizer
+        self.assertEqual(len(result_frames), 1)
+        result = result_frames[0]
+        self.assertIsInstance(result, LLMContextSummaryResultFrame)
+        self.assertEqual(result.request_id, "timeout_test")
+        self.assertEqual(result.summary, "")
+        self.assertEqual(result.last_summarized_index, -1)
+        self.assertIn("timed out", result.error)
+
+    async def test_dedicated_llm_exception(self):
+        """Test that dedicated LLM exceptions produce error result."""
+        from pipecat.processors.aggregators.llm_response_universal import (
+            LLMAssistantAggregator,
+            LLMAssistantAggregatorParams,
+        )
+
+        context, frame = self._create_context_and_frame()
+
+        # Create a mock dedicated LLM that raises
+        dedicated_llm = LLMService()
+        dedicated_llm._generate_summary = AsyncMock(
+            side_effect=RuntimeError("LLM connection failed")
+        )
+
+        config = LLMContextSummarizationConfig(
+            max_context_tokens=50,
+            llm=dedicated_llm,
+        )
+        params = LLMAssistantAggregatorParams(
+            enable_context_summarization=True,
+            context_summarization_config=config,
+        )
+        aggregator = LLMAssistantAggregator(context, params=params)
+        aggregator.push_error = AsyncMock()
+
+        # Mock summarizer.process_frame to capture the result
+        result_frames = []
+
+        async def capture_process(frame):
+            result_frames.append(frame)
+
+        aggregator._summarizer.process_frame = capture_process
+
+        await aggregator._generate_summary_with_dedicated_llm(dedicated_llm, frame)
+
+        # Verify error result was fed to summarizer
+        self.assertEqual(len(result_frames), 1)
+        result = result_frames[0]
+        self.assertIsInstance(result, LLMContextSummaryResultFrame)
+        self.assertEqual(result.request_id, "dedicated_test")
+        self.assertEqual(result.summary, "")
+        self.assertEqual(result.last_summarized_index, -1)
+        self.assertIn("LLM connection failed", result.error)
+
+        # push_error should have been called
+        aggregator.push_error.assert_called_once()
+
+    async def test_on_request_summarization_routes_to_dedicated_llm(self):
+        """Test that _on_request_summarization routes to dedicated LLM when configured."""
+        from pipecat.processors.aggregators.llm_response_universal import (
+            LLMAssistantAggregator,
+            LLMAssistantAggregatorParams,
+        )
+
+        context, frame = self._create_context_and_frame()
+
+        dedicated_llm = LLMService()
+        dedicated_llm._generate_summary = AsyncMock(return_value=("Summary", 1))
+
+        config = LLMContextSummarizationConfig(
+            max_context_tokens=50,
+            llm=dedicated_llm,
+        )
+        params = LLMAssistantAggregatorParams(
+            enable_context_summarization=True,
+            context_summarization_config=config,
+        )
+        aggregator = LLMAssistantAggregator(context, params=params)
+        aggregator.push_frame = AsyncMock()
+
+        # Track what coroutine is passed to create_task
+        created_coros = []
+        original_create_task = aggregator.create_task
+
+        def mock_create_task(coro, *args, **kwargs):
+            created_coros.append(coro)
+            # Actually run the coroutine to avoid "never awaited" warning
+            task = asyncio.ensure_future(coro)
+            return task
+
+        aggregator.create_task = mock_create_task
+
+        await aggregator._on_request_summarization(aggregator._summarizer, frame)
+
+        # Should NOT push frame upstream
+        aggregator.push_frame.assert_not_called()
+
+        # Should have created a task for the dedicated LLM
+        self.assertEqual(len(created_coros), 1)
+
+        # Wait for the task to complete
+        await asyncio.sleep(0.05)
+
+    async def test_on_request_summarization_pushes_upstream_without_dedicated_llm(self):
+        """Test that _on_request_summarization pushes upstream when no dedicated LLM."""
+        from pipecat.processors.aggregators.llm_response_universal import (
+            LLMAssistantAggregator,
+            LLMAssistantAggregatorParams,
+        )
+        from pipecat.processors.frame_processor import FrameDirection
+
+        context, frame = self._create_context_and_frame()
+
+        config = LLMContextSummarizationConfig(max_context_tokens=50)
+        params = LLMAssistantAggregatorParams(
+            enable_context_summarization=True,
+            context_summarization_config=config,
+        )
+        aggregator = LLMAssistantAggregator(context, params=params)
+        aggregator.push_frame = AsyncMock()
+
+        await aggregator._on_request_summarization(aggregator._summarizer, frame)
+
+        # Should push frame upstream
+        aggregator.push_frame.assert_called_once_with(frame, FrameDirection.UPSTREAM)
 
 
 class TestLLMSpecificMessageHandling(unittest.TestCase):
