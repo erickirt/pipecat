@@ -1991,6 +1991,16 @@ class LLMFullResponseEndFrame(ControlFrame):
 
 
 @dataclass
+class LLMAssistantPushAggregationFrame(ControlFrame):
+    """Frame that forces the LLM assistant aggregator to push its current aggregation to context.
+
+    When received by ``LLMAssistantAggregator``, any text that has been accumulated
+    in the aggregation buffer is immediately committed to the conversation context as
+    an assistant message, without waiting for an ``LLMFullResponseEndFrame``.
+    """
+
+
+@dataclass
 class LLMContextSummaryRequestFrame(ControlFrame):
     """Frame requesting context summarization from an LLM service.
 

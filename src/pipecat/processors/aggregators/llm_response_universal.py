@@ -35,6 +35,7 @@ from pipecat.frames.frames import (
     InputAudioRawFrame,
     InterimTranscriptionFrame,
     InterruptionFrame,
+    LLMAssistantPushAggregationFrame,
     LLMContextAssistantTimestampFrame,
     LLMContextFrame,
     LLMContextSummaryRequestFrame,
@@ -879,6 +880,8 @@ class LLMAssistantAggregator(LLMContextAggregator):
         elif isinstance(frame, (EndFrame, CancelFrame)):
             await self._handle_end_or_cancel(frame)
             await self.push_frame(frame, direction)
+        elif isinstance(frame, LLMAssistantPushAggregationFrame):
+            await self.push_aggregation()
         elif isinstance(frame, LLMFullResponseStartFrame):
             await self._handle_llm_start(frame)
         elif isinstance(frame, LLMFullResponseEndFrame):
