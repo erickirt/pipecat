@@ -6,10 +6,11 @@
 
 """Tests for context summarization feature."""
 
+import asyncio
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
-from pipecat.frames.frames import LLMContextSummaryRequestFrame
+from pipecat.frames.frames import LLMContextSummaryRequestFrame, LLMContextSummaryResultFrame
 from pipecat.processors.aggregators.llm_context import LLMContext, LLMSpecificMessage
 from pipecat.services.llm_service import LLMService
 from pipecat.utils.context.llm_context_summarization import (
@@ -600,6 +601,250 @@ class TestSummaryGenerationExceptions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(summary, "This is a summary of the conversation")
         self.assertGreater(last_index, -1)
         self.assertEqual(last_index, 1)  # Should be the index of the last summarized message
+
+    async def test_generate_summary_task_timeout(self):
+        """Test that _generate_summary_task handles timeout correctly."""
+        llm_service = LLMService()
+
+        # Mock _generate_summary to hang
+        async def slow_summary(frame):
+            await asyncio.sleep(10)
+            return ("summary", 1)
+
+        llm_service._generate_summary = slow_summary
+
+        broadcast_calls = []
+
+        async def mock_broadcast(frame_class, **kwargs):
+            broadcast_calls.append((frame_class, kwargs))
+
+        llm_service.broadcast_frame = mock_broadcast
+        llm_service.push_error = AsyncMock()
+
+        context = LLMContext()
+        context.add_message({"role": "user", "content": "Message 1"})
+        context.add_message({"role": "assistant", "content": "Response 1"})
+        context.add_message({"role": "user", "content": "Message 2"})
+
+        frame = LLMContextSummaryRequestFrame(
+            request_id="timeout_test",
+            context=context,
+            min_messages_to_keep=1,
+            target_context_tokens=1000,
+            summarization_prompt="Summarize this",
+            summarization_timeout=0.1,  # Very short timeout
+        )
+
+        await llm_service._generate_summary_task(frame)
+
+        # Should have broadcast an error result
+        self.assertEqual(len(broadcast_calls), 1)
+        _, kwargs = broadcast_calls[0]
+        self.assertEqual(kwargs["request_id"], "timeout_test")
+        self.assertEqual(kwargs["summary"], "")
+        self.assertEqual(kwargs["last_summarized_index"], -1)
+        # error is None for timeout path (push_error is called instead)
+        self.assertIsNone(kwargs["error"])
+
+        # push_error should have been called with timeout message
+        llm_service.push_error.assert_called_once()
+        call_args = llm_service.push_error.call_args
+        error_msg = call_args.kwargs.get("error_msg") or call_args.args[0]
+        self.assertIn("timed out", error_msg)
+
+
+class TestDedicatedLLMSummarization(unittest.IsolatedAsyncioTestCase):
+    """Tests for dedicated LLM summarization in LLMContextSummarizer."""
+
+    async def asyncSetUp(self):
+        from pipecat.utils.asyncio.task_manager import TaskManager, TaskManagerParams
+
+        self.task_manager = TaskManager()
+        self.task_manager.setup(TaskManagerParams(loop=asyncio.get_running_loop()))
+
+    def _create_context_and_config(self, dedicated_llm):
+        """Create a context with enough messages and a config with a dedicated LLM."""
+        context = LLMContext()
+        for i in range(10):
+            context.add_message(
+                {"role": "user", "content": f"Test message {i} that adds tokens to context."}
+            )
+
+        config = LLMContextSummarizationConfig(
+            max_context_tokens=50,  # Very low to trigger easily
+            llm=dedicated_llm,
+            summarization_timeout=5.0,
+        )
+        return context, config
+
+    async def test_dedicated_llm_success(self):
+        """Test that dedicated LLM generates summary and applies result."""
+        from pipecat.processors.aggregators.llm_context_summarizer import LLMContextSummarizer
+
+        dedicated_llm = LLMService()
+        dedicated_llm._generate_summary = AsyncMock(return_value=("Dedicated summary", 5))
+
+        context, config = self._create_context_and_config(dedicated_llm)
+        original_message_count = len(context.messages)
+        summarizer = LLMContextSummarizer(context=context, config=config)
+        await summarizer.setup(self.task_manager)
+
+        # Track whether on_request_summarization event fires (it should NOT)
+        event_fired = False
+
+        @summarizer.event_handler("on_request_summarization")
+        async def on_request_summarization(summarizer, frame):
+            nonlocal event_fired
+            event_fired = True
+
+        # Trigger summarization via LLM response start
+        from pipecat.frames.frames import LLMFullResponseStartFrame
+
+        await summarizer.process_frame(LLMFullResponseStartFrame())
+
+        # Wait for the background task to complete
+        await asyncio.sleep(0.1)
+
+        # The event should NOT have fired (dedicated LLM handles it internally)
+        self.assertFalse(event_fired)
+
+        # Verify the dedicated LLM was called
+        dedicated_llm._generate_summary.assert_called_once()
+
+        # Verify summary was applied to context (message count should decrease)
+        self.assertLess(len(context.messages), original_message_count)
+
+        # Verify summary message is present
+        summary_messages = [
+            msg for msg in context.messages if "Conversation summary:" in msg.get("content", "")
+        ]
+        self.assertEqual(len(summary_messages), 1)
+        self.assertIn("Dedicated summary", summary_messages[0]["content"])
+
+        await summarizer.cleanup()
+
+    async def test_dedicated_llm_timeout(self):
+        """Test that dedicated LLM timeout produces error and clears state."""
+        from pipecat.processors.aggregators.llm_context_summarizer import LLMContextSummarizer
+
+        dedicated_llm = LLMService()
+
+        async def slow_summary(frame):
+            await asyncio.sleep(10)
+            return ("summary", 1)
+
+        dedicated_llm._generate_summary = slow_summary
+
+        context, config = self._create_context_and_config(dedicated_llm)
+        config.summarization_timeout = 0.1  # Very short timeout
+        summarizer = LLMContextSummarizer(context=context, config=config)
+        await summarizer.setup(self.task_manager)
+
+        original_message_count = len(context.messages)
+
+        # Trigger summarization
+        from pipecat.frames.frames import LLMFullResponseStartFrame
+
+        await summarizer.process_frame(LLMFullResponseStartFrame())
+
+        # Wait for the background task to complete (timeout + some buffer)
+        await asyncio.sleep(0.3)
+
+        # Context should be unchanged (timeout = error = no summary applied)
+        self.assertEqual(len(context.messages), original_message_count)
+
+        # Summarization state should be cleared so new requests can be made
+        self.assertFalse(summarizer._summarization_in_progress)
+
+        await summarizer.cleanup()
+
+    async def test_dedicated_llm_exception(self):
+        """Test that dedicated LLM exceptions produce error and clear state."""
+        from pipecat.processors.aggregators.llm_context_summarizer import LLMContextSummarizer
+
+        dedicated_llm = LLMService()
+        dedicated_llm._generate_summary = AsyncMock(
+            side_effect=RuntimeError("LLM connection failed")
+        )
+
+        context, config = self._create_context_and_config(dedicated_llm)
+        summarizer = LLMContextSummarizer(context=context, config=config)
+        await summarizer.setup(self.task_manager)
+
+        original_message_count = len(context.messages)
+
+        # Trigger summarization
+        from pipecat.frames.frames import LLMFullResponseStartFrame
+
+        await summarizer.process_frame(LLMFullResponseStartFrame())
+
+        # Wait for the background task to complete
+        await asyncio.sleep(0.1)
+
+        # Context should be unchanged (exception = error = no summary applied)
+        self.assertEqual(len(context.messages), original_message_count)
+
+        # Summarization state should be cleared
+        self.assertFalse(summarizer._summarization_in_progress)
+
+        await summarizer.cleanup()
+
+    async def test_dedicated_llm_does_not_emit_event(self):
+        """Test that summarizer does NOT emit on_request_summarization when dedicated LLM is set."""
+        from pipecat.processors.aggregators.llm_context_summarizer import LLMContextSummarizer
+
+        dedicated_llm = LLMService()
+        dedicated_llm._generate_summary = AsyncMock(return_value=("Summary", 1))
+
+        context, config = self._create_context_and_config(dedicated_llm)
+        summarizer = LLMContextSummarizer(context=context, config=config)
+        await summarizer.setup(self.task_manager)
+
+        event_fired = False
+
+        @summarizer.event_handler("on_request_summarization")
+        async def on_request_summarization(summarizer, frame):
+            nonlocal event_fired
+            event_fired = True
+
+        from pipecat.frames.frames import LLMFullResponseStartFrame
+
+        await summarizer.process_frame(LLMFullResponseStartFrame())
+        await asyncio.sleep(0.1)
+
+        self.assertFalse(event_fired)
+
+        await summarizer.cleanup()
+
+    async def test_no_dedicated_llm_emits_event(self):
+        """Test that summarizer emits on_request_summarization when no dedicated LLM."""
+        from pipecat.processors.aggregators.llm_context_summarizer import LLMContextSummarizer
+
+        context = LLMContext()
+        for i in range(10):
+            context.add_message(
+                {"role": "user", "content": f"Test message {i} that adds tokens to context."}
+            )
+
+        config = LLMContextSummarizationConfig(max_context_tokens=50)
+        summarizer = LLMContextSummarizer(context=context, config=config)
+        await summarizer.setup(self.task_manager)
+
+        request_frame = None
+
+        @summarizer.event_handler("on_request_summarization")
+        async def on_request_summarization(summarizer, frame):
+            nonlocal request_frame
+            request_frame = frame
+
+        from pipecat.frames.frames import LLMFullResponseStartFrame
+
+        await summarizer.process_frame(LLMFullResponseStartFrame())
+
+        self.assertIsNotNone(request_frame)
+        self.assertIsInstance(request_frame, LLMContextSummaryRequestFrame)
+
+        await summarizer.cleanup()
 
 
 class TestLLMSpecificMessageHandling(unittest.TestCase):

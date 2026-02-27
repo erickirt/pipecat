@@ -11,11 +11,17 @@ context when token limits are reached, enabling efficient long-running conversat
 """
 
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
+
+if TYPE_CHECKING:
+    from pipecat.services.llm_service import LLMService
 
 from loguru import logger
 
 from pipecat.processors.aggregators.llm_context import LLMContext, LLMSpecificMessage
+
+# Fallback timeout (seconds) used when summarization_timeout is None.
+DEFAULT_SUMMARIZATION_TIMEOUT = 120.0
 
 # Token estimation constants
 CHARS_PER_TOKEN = 4  # Industry-standard heuristic: 1 token ≈ 4 characters
@@ -73,6 +79,19 @@ class LLMContextSummarizationConfig:
             immediate conversational context.
         summarization_prompt: Custom prompt for the LLM to use when generating
             summaries. If None, uses DEFAULT_SUMMARIZATION_PROMPT.
+        summary_message_template: Template for formatting the summary when
+            injected into context. Must contain ``{summary}`` as a placeholder
+            for the generated summary text. Allows applications to wrap the
+            summary in custom delimiters (e.g., XML tags) so that system
+            prompts can distinguish summaries from live conversation.
+        llm: Optional separate LLM service for generating summaries. When set,
+            summarization requests are sent to this service instead of the
+            pipeline's primary LLM. Useful for routing summarization to a
+            cheaper/faster model (e.g., Gemini Flash) while keeping an
+            expensive model for conversation. If None, uses the pipeline LLM.
+        summarization_timeout: Maximum time in seconds to wait for the LLM to
+            generate a summary. If the call exceeds this timeout, summarization
+            is aborted with an error and future summarizations are unblocked.
     """
 
     max_context_tokens: int = 8000
@@ -80,6 +99,9 @@ class LLMContextSummarizationConfig:
     max_unsummarized_messages: int = 20
     min_messages_after_summary: int = 4
     summarization_prompt: Optional[str] = None
+    summary_message_template: str = "Conversation summary: {summary}"
+    llm: Optional["LLMService"] = None
+    summarization_timeout: float = DEFAULT_SUMMARIZATION_TIMEOUT
 
     def __post_init__(self):
         """Validate configuration parameters."""

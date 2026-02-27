@@ -6,8 +6,10 @@
 
 """This module defines a summarizer for managing LLM context summarization."""
 
+import asyncio
 import uuid
-from typing import Optional
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Optional
 
 from loguru import logger
 
@@ -22,9 +24,32 @@ from pipecat.processors.aggregators.llm_context import LLMContext, LLMSpecificMe
 from pipecat.utils.asyncio.task_manager import BaseTaskManager
 from pipecat.utils.base_object import BaseObject
 from pipecat.utils.context.llm_context_summarization import (
+    DEFAULT_SUMMARIZATION_TIMEOUT,
     LLMContextSummarizationConfig,
     LLMContextSummarizationUtil,
 )
+
+if TYPE_CHECKING:
+    from pipecat.services.llm_service import LLMService
+
+
+@dataclass
+class SummaryAppliedEvent:
+    """Event data emitted when context summarization completes successfully.
+
+    Parameters:
+        original_message_count: Number of messages before summarization.
+        new_message_count: Number of messages after summarization.
+        summarized_message_count: Number of messages that were compressed
+            into the summary.
+        preserved_message_count: Number of recent messages preserved
+            uncompressed.
+    """
+
+    original_message_count: int
+    new_message_count: int
+    summarized_message_count: int
+    preserved_message_count: int
 
 
 class LLMContextSummarizer(BaseObject):
@@ -39,6 +64,10 @@ class LLMContextSummarizer(BaseObject):
     - on_request_summarization: Emitted when summarization should be triggered.
         The aggregator should broadcast this frame to the LLM service.
 
+    - on_summary_applied: Emitted after a summary has been successfully applied
+        to the context. Receives a SummaryAppliedEvent with metrics about the
+        compression.
+
     Example::
 
         @summarizer.event_handler("on_request_summarization")
@@ -49,6 +78,10 @@ class LLMContextSummarizer(BaseObject):
                 context=frame.context,
                 ...
             )
+
+        @summarizer.event_handler("on_summary_applied")
+        async def on_summary_applied(summarizer, event: SummaryAppliedEvent):
+            logger.info(f"Compressed {event.original_message_count} -> {event.new_message_count} messages")
     """
 
     def __init__(
@@ -74,6 +107,7 @@ class LLMContextSummarizer(BaseObject):
         self._pending_summary_request_id: Optional[str] = None
 
         self._register_event_handler("on_request_summarization", sync=True)
+        self._register_event_handler("on_summary_applied")
 
     @property
     def task_manager(self) -> BaseTaskManager:
@@ -198,8 +232,10 @@ class LLMContextSummarizer(BaseObject):
     async def _request_summarization(self):
         """Request context summarization from LLM service.
 
-        Creates a summarization request frame and emits it via event handler.
-        Tracks the request ID to match async responses and prevent race conditions.
+        Creates a summarization request frame and either handles it directly
+        using a dedicated LLM (if configured) or emits it via event handler
+        for the pipeline's primary LLM. Tracks the request ID to match async
+        responses and prevent race conditions.
         """
         # Generate unique request ID
         request_id = str(uuid.uuid4())
@@ -218,10 +254,63 @@ class LLMContextSummarizer(BaseObject):
             min_messages_to_keep=min_keep,
             target_context_tokens=self._config.target_context_tokens,
             summarization_prompt=self._config.summary_prompt,
+            summarization_timeout=self._config.summarization_timeout,
         )
 
-        # Emit event for aggregator to broadcast
-        await self._call_event_handler("on_request_summarization", request_frame)
+        if self._config.llm:
+            # Use dedicated LLM directly — no need to involve the pipeline
+            self.task_manager.create_task(
+                self._generate_summary_with_dedicated_llm(self._config.llm, request_frame),
+                f"{self}-dedicated-llm-summary",
+            )
+        else:
+            # Emit event for aggregator to broadcast to the pipeline LLM
+            await self._call_event_handler("on_request_summarization", request_frame)
+
+    async def _generate_summary_with_dedicated_llm(
+        self, llm: "LLMService", frame: LLMContextSummaryRequestFrame
+    ):
+        """Generate summary using a dedicated LLM service.
+
+        Calls the dedicated LLM's _generate_summary directly and feeds the
+        result back through _handle_summary_result, bypassing the pipeline.
+
+        Args:
+            llm: The dedicated LLM service to use for summarization.
+            frame: The summarization request frame.
+        """
+        timeout = frame.summarization_timeout or DEFAULT_SUMMARIZATION_TIMEOUT
+
+        try:
+            summary, last_index = await asyncio.wait_for(
+                llm._generate_summary(frame),
+                timeout=timeout,
+            )
+            result_frame = LLMContextSummaryResultFrame(
+                request_id=frame.request_id,
+                summary=summary,
+                last_summarized_index=last_index,
+            )
+        except asyncio.TimeoutError:
+            error = f"Context summarization timed out after {timeout}s"
+            logger.error(f"{self}: {error}")
+            result_frame = LLMContextSummaryResultFrame(
+                request_id=frame.request_id,
+                summary="",
+                last_summarized_index=-1,
+                error=error,
+            )
+        except Exception as e:
+            error = f"Error generating context summary: {e}"
+            logger.error(f"{self}: {error}")
+            result_frame = LLMContextSummaryResultFrame(
+                request_id=frame.request_id,
+                summary="",
+                last_summarized_index=-1,
+                error=error,
+            )
+
+        await self._handle_summary_result(result_frame)
 
     async def _handle_summary_result(self, frame: LLMContextSummaryResultFrame):
         """Handle context summarization result from LLM service.
@@ -306,8 +395,10 @@ class LLMContextSummarizer(BaseObject):
         # Get recent messages to keep
         recent_messages = messages[last_summarized_index + 1 :]
 
-        # Create summary message as an assistant message
-        summary_message = {"role": "assistant", "content": f"Conversation summary: {summary}"}
+        # Create summary message as a user message (the summary is context
+        # provided *to* the assistant, not something the assistant said)
+        summary_content = self._config.summary_message_template.format(summary=summary)
+        summary_message = {"role": "user", "content": summary_content}
 
         # Reconstruct context
         new_messages = []
@@ -317,9 +408,23 @@ class LLMContextSummarizer(BaseObject):
         new_messages.extend(recent_messages)
 
         # Update context
+        original_message_count = len(messages)
+        num_system_preserved = 1 if first_system_msg else 0
         self._context.set_messages(new_messages)
 
+        # Messages actually summarized = index range minus the preserved system message
+        summarized_count = last_summarized_index + 1 - num_system_preserved
+
         logger.info(
-            f"{self}: Applied context summary, compressed {last_summarized_index + 1} messages "
-            f"into summary. Context now has {len(new_messages)} messages (was {len(messages)})"
+            f"{self}: Applied context summary, compressed {summarized_count} messages "
+            f"into summary. Context now has {len(new_messages)} messages (was {original_message_count})"
         )
+
+        # Emit event for observability
+        event = SummaryAppliedEvent(
+            original_message_count=original_message_count,
+            new_message_count=len(new_messages),
+            summarized_message_count=summarized_count,
+            preserved_message_count=len(recent_messages) + num_system_preserved,
+        )
+        await self._call_event_handler("on_summary_applied", event)
