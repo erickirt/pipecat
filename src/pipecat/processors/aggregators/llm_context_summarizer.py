@@ -306,8 +306,8 @@ class LLMContextSummarizer(BaseObject):
         # Get recent messages to keep
         recent_messages = messages[last_summarized_index + 1 :]
 
-        # Create summary message as an assistant message
-        summary_message = {"role": "assistant", "content": f"Conversation summary: {summary}"}
+        # Create summary message as an user message
+        summary_message = {"role": "user", "content": f"Conversation summary: {summary}"}
 
         # Reconstruct context
         new_messages = []
