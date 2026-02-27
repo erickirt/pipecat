@@ -14,8 +14,10 @@ from pipecat.frames.frames import LLMContextSummaryRequestFrame, LLMContextSumma
 from pipecat.processors.aggregators.llm_context import LLMContext, LLMSpecificMessage
 from pipecat.services.llm_service import LLMService
 from pipecat.utils.context.llm_context_summarization import (
+    LLMAutoContextSummarizationConfig,
     LLMContextSummarizationConfig,
     LLMContextSummarizationUtil,
+    LLMContextSummaryConfig,
 )
 
 
@@ -167,41 +169,107 @@ class TestContextSummarizationMixin(unittest.TestCase):
         self.assertIn("USER: First part Second part", transcript)
 
 
-class TestLLMContextSummarizationConfig(unittest.TestCase):
-    """Tests for LLMContextSummarizationConfig."""
+class TestLLMContextSummaryConfig(unittest.TestCase):
+    """Tests for LLMContextSummaryConfig."""
 
     def test_default_config(self):
         """Test default configuration values."""
-        config = LLMContextSummarizationConfig()
+        config = LLMContextSummaryConfig()
 
-        self.assertEqual(config.max_context_tokens, 8000)
-        self.assertEqual(config.max_unsummarized_messages, 20)
+        self.assertEqual(config.target_context_tokens, 6000)
         self.assertEqual(config.min_messages_after_summary, 4)
         self.assertIsNone(config.summarization_prompt)
 
     def test_custom_config(self):
         """Test custom configuration."""
-        config = LLMContextSummarizationConfig(
-            max_context_tokens=2500,
+        config = LLMContextSummaryConfig(
             target_context_tokens=2000,
-            max_unsummarized_messages=15,
             min_messages_after_summary=4,
             summarization_prompt="Custom prompt",
         )
 
-        self.assertEqual(config.max_context_tokens, 2500)
         self.assertEqual(config.target_context_tokens, 2000)
-        self.assertEqual(config.max_unsummarized_messages, 15)
         self.assertEqual(config.min_messages_after_summary, 4)
         self.assertEqual(config.summary_prompt, "Custom prompt")
 
     def test_summary_prompt_property(self):
         """Test summary_prompt property uses default when None."""
-        config = LLMContextSummarizationConfig()
+        config = LLMContextSummaryConfig()
         self.assertIn("summarizing a conversation", config.summary_prompt.lower())
 
-        config_with_custom = LLMContextSummarizationConfig(summarization_prompt="Custom")
+        config_with_custom = LLMContextSummaryConfig(summarization_prompt="Custom")
         self.assertEqual(config_with_custom.summary_prompt, "Custom")
+
+
+class TestLLMAutoContextSummarizationConfig(unittest.TestCase):
+    """Tests for LLMAutoContextSummarizationConfig."""
+
+    def test_default_config(self):
+        """Test default configuration values."""
+        config = LLMAutoContextSummarizationConfig()
+
+        self.assertEqual(config.max_context_tokens, 8000)
+        self.assertEqual(config.max_unsummarized_messages, 20)
+        self.assertEqual(config.summary_config.target_context_tokens, 6000)
+        self.assertEqual(config.summary_config.min_messages_after_summary, 4)
+
+    def test_custom_config(self):
+        """Test custom configuration."""
+        config = LLMAutoContextSummarizationConfig(
+            max_context_tokens=2500,
+            max_unsummarized_messages=15,
+            summary_config=LLMContextSummaryConfig(
+                target_context_tokens=2000,
+                min_messages_after_summary=4,
+                summarization_prompt="Custom prompt",
+            ),
+        )
+
+        self.assertEqual(config.max_context_tokens, 2500)
+        self.assertEqual(config.max_unsummarized_messages, 15)
+        self.assertEqual(config.summary_config.target_context_tokens, 2000)
+        self.assertEqual(config.summary_config.min_messages_after_summary, 4)
+        self.assertEqual(config.summary_config.summary_prompt, "Custom prompt")
+
+    def test_target_tokens_auto_adjusted(self):
+        """Test that target_context_tokens is auto-adjusted when it exceeds max."""
+        config = LLMAutoContextSummarizationConfig(
+            max_context_tokens=1000,
+            summary_config=LLMContextSummaryConfig(target_context_tokens=9000),
+        )
+        self.assertLessEqual(config.summary_config.target_context_tokens, config.max_context_tokens)
+
+
+class TestLLMContextSummarizationConfigDeprecated(unittest.TestCase):
+    """Tests for deprecated LLMContextSummarizationConfig."""
+
+    def test_emits_deprecation_warning(self):
+        """Test that instantiating the deprecated config emits a DeprecationWarning."""
+        with self.assertWarns(DeprecationWarning):
+            LLMContextSummarizationConfig()
+
+    def test_to_auto_config(self):
+        """Test conversion to the new LLMAutoContextSummarizationConfig."""
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            old_config = LLMContextSummarizationConfig(
+                max_context_tokens=2500,
+                target_context_tokens=2000,
+                max_unsummarized_messages=15,
+                min_messages_after_summary=4,
+                summarization_prompt="Custom",
+            )
+
+        new_config = old_config.to_auto_config()
+
+        self.assertIsInstance(new_config, LLMAutoContextSummarizationConfig)
+        self.assertEqual(new_config.max_context_tokens, 2500)
+        self.assertEqual(new_config.max_unsummarized_messages, 15)
+        self.assertEqual(new_config.summary_config.target_context_tokens, 2000)
+        self.assertEqual(new_config.summary_config.min_messages_after_summary, 4)
+        self.assertEqual(new_config.summary_config.summarization_prompt, "Custom")
 
 
 class TestFunctionCallHandling(unittest.TestCase):
@@ -670,10 +738,12 @@ class TestDedicatedLLMSummarization(unittest.IsolatedAsyncioTestCase):
                 {"role": "user", "content": f"Test message {i} that adds tokens to context."}
             )
 
-        config = LLMContextSummarizationConfig(
+        config = LLMAutoContextSummarizationConfig(
             max_context_tokens=50,  # Very low to trigger easily
-            llm=dedicated_llm,
-            summarization_timeout=5.0,
+            summary_config=LLMContextSummaryConfig(
+                llm=dedicated_llm,
+                summarization_timeout=5.0,
+            ),
         )
         return context, config
 
@@ -736,7 +806,7 @@ class TestDedicatedLLMSummarization(unittest.IsolatedAsyncioTestCase):
         dedicated_llm._generate_summary = slow_summary
 
         context, config = self._create_context_and_config(dedicated_llm)
-        config.summarization_timeout = 0.1  # Very short timeout
+        config.summary_config.summarization_timeout = 0.1  # Very short timeout
         summarizer = LLMContextSummarizer(context=context, config=config)
         await summarizer.setup(self.task_manager)
 
@@ -826,7 +896,7 @@ class TestDedicatedLLMSummarization(unittest.IsolatedAsyncioTestCase):
                 {"role": "user", "content": f"Test message {i} that adds tokens to context."}
             )
 
-        config = LLMContextSummarizationConfig(max_context_tokens=50)
+        config = LLMAutoContextSummarizationConfig(max_context_tokens=50)
         summarizer = LLMContextSummarizer(context=context, config=config)
         await summarizer.setup(self.task_manager)
 

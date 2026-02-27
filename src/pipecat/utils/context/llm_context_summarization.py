@@ -10,7 +10,8 @@ This module provides reusable functionality for automatically compressing conver
 context when token limits are reached, enabling efficient long-running conversations.
 """
 
-from dataclasses import dataclass
+import warnings
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, List, Optional
 
 if TYPE_CHECKING:
@@ -54,26 +55,18 @@ The conversation transcript follows. Generate only the summary, no other text.""
 
 
 @dataclass
-class LLMContextSummarizationConfig:
-    """Configuration for context summarization behavior.
+class LLMContextSummaryConfig:
+    """Configuration for summary generation parameters.
 
-    Controls when and how conversation context is automatically compressed
-    to manage token limits in long-running conversations.
+    Contains settings that control how a summary is generated. Used by both
+    automatic and manual summarization modes.
 
     Parameters:
-        max_context_tokens: Maximum allowed context size in tokens. When this
-            limit is reached, summarization is triggered to compress the context.
-            The tokens are calculated using the industry-standard approximation
-            of 1 token ≈ 4 characters.
         target_context_tokens: Maximum token size for the generated summary.
             This value is passed directly to the LLM as the max_tokens parameter
             when generating the summary. Should be sized appropriately to allow
             the summary plus recent preserved messages to fit within reasonable
             context limits.
-        max_unsummarized_messages: Maximum number of new messages that can
-            accumulate since the last summary before triggering a new
-            summarization. This ensures regular compression even if token
-            limits are not reached.
         min_messages_after_summary: Number of recent messages to preserve
             uncompressed after each summarization. These messages maintain
             immediate conversational context.
@@ -94,6 +87,94 @@ class LLMContextSummarizationConfig:
             is aborted with an error and future summarizations are unblocked.
     """
 
+    target_context_tokens: int = 6000
+    min_messages_after_summary: int = 4
+    summarization_prompt: Optional[str] = None
+    summary_message_template: str = "Conversation summary: {summary}"
+    llm: Optional["LLMService"] = None
+    summarization_timeout: float = DEFAULT_SUMMARIZATION_TIMEOUT
+
+    def __post_init__(self):
+        """Validate configuration parameters."""
+        if self.target_context_tokens <= 0:
+            raise ValueError("target_context_tokens must be positive")
+        if self.min_messages_after_summary < 0:
+            raise ValueError("min_messages_after_summary must be non-negative")
+
+    @property
+    def summary_prompt(self) -> str:
+        """Get the summarization prompt to use.
+
+        Returns:
+            The custom prompt if set, otherwise the default summarization prompt.
+        """
+        return self.summarization_prompt or DEFAULT_SUMMARIZATION_PROMPT
+
+
+@dataclass
+class LLMAutoContextSummarizationConfig:
+    """Configuration for automatic context summarization.
+
+    Controls when conversation context is automatically compressed and how
+    that summary is generated. Summarization is triggered when either the
+    token limit or the unsummarized message count threshold is exceeded.
+
+    Parameters:
+        max_context_tokens: Maximum allowed context size in tokens. When this
+            limit is reached, summarization is triggered to compress the context.
+            The tokens are calculated using the industry-standard approximation
+            of 1 token ≈ 4 characters.
+        max_unsummarized_messages: Maximum number of new messages that can
+            accumulate since the last summary before triggering a new
+            summarization. This ensures regular compression even if token
+            limits are not reached.
+        summary_config: Configuration for summary generation parameters
+            (prompt, token budget, messages to keep). If not provided, uses
+            default ``LLMContextSummaryConfig`` values.
+    """
+
+    max_context_tokens: int = 8000
+    max_unsummarized_messages: int = 20
+    summary_config: LLMContextSummaryConfig = field(default_factory=LLMContextSummaryConfig)
+
+    def __post_init__(self):
+        """Validate configuration parameters."""
+        if self.max_context_tokens <= 0:
+            raise ValueError("max_context_tokens must be positive")
+        if self.max_unsummarized_messages < 1:
+            raise ValueError("max_unsummarized_messages must be at least 1")
+
+        # Auto-adjust target_context_tokens if it exceeds max_context_tokens
+        if self.summary_config.target_context_tokens > self.max_context_tokens:
+            # Use 80% of max_context_tokens as a reasonable default
+            self.summary_config.target_context_tokens = int(self.max_context_tokens * 0.8)
+
+
+@dataclass
+class LLMContextSummarizationConfig:
+    """Configuration for context summarization behavior.
+
+    .. deprecated::
+        Use :class:`LLMAutoContextSummarizationConfig` with a nested
+        :class:`LLMContextSummaryConfig` instead::
+
+            LLMAutoContextSummarizationConfig(
+                max_context_tokens=8000,
+                max_unsummarized_messages=20,
+                summary_config=LLMContextSummaryConfig(
+                    target_context_tokens=6000,
+                    min_messages_after_summary=4,
+                ),
+            )
+
+    Parameters:
+        max_context_tokens: Maximum allowed context size in tokens.
+        target_context_tokens: Maximum token size for the generated summary.
+        max_unsummarized_messages: Maximum new messages before triggering summarization.
+        min_messages_after_summary: Number of recent messages to preserve.
+        summarization_prompt: Custom prompt for summary generation.
+    """
+
     max_context_tokens: int = 8000
     target_context_tokens: int = 6000
     max_unsummarized_messages: int = 20
@@ -105,6 +186,12 @@ class LLMContextSummarizationConfig:
 
     def __post_init__(self):
         """Validate configuration parameters."""
+        warnings.warn(
+            "LLMContextSummarizationConfig is deprecated. "
+            "Use LLMAutoContextSummarizationConfig with a nested LLMContextSummaryConfig instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         if self.max_context_tokens <= 0:
             raise ValueError("max_context_tokens must be positive")
         if self.target_context_tokens <= 0:
@@ -128,6 +215,25 @@ class LLMContextSummarizationConfig:
             The custom prompt if set, otherwise the default summarization prompt.
         """
         return self.summarization_prompt or DEFAULT_SUMMARIZATION_PROMPT
+
+    def to_auto_config(self) -> LLMAutoContextSummarizationConfig:
+        """Convert to the new :class:`LLMAutoContextSummarizationConfig`.
+
+        Returns:
+            An equivalent ``LLMAutoContextSummarizationConfig`` instance.
+        """
+        return LLMAutoContextSummarizationConfig(
+            max_context_tokens=self.max_context_tokens,
+            max_unsummarized_messages=self.max_unsummarized_messages,
+            summary_config=LLMContextSummaryConfig(
+                target_context_tokens=self.target_context_tokens,
+                min_messages_after_summary=self.min_messages_after_summary,
+                summarization_prompt=self.summarization_prompt,
+                summary_message_template=self.summary_message_template,
+                llm=self.llm,
+                summarization_timeout=self.summarization_timeout,
+            ),
+        )
 
 
 @dataclass

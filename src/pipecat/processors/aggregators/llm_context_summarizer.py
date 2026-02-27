@@ -19,14 +19,16 @@ from pipecat.frames.frames import (
     LLMContextSummaryRequestFrame,
     LLMContextSummaryResultFrame,
     LLMFullResponseStartFrame,
+    LLMSummarizeContextFrame,
 )
 from pipecat.processors.aggregators.llm_context import LLMContext, LLMSpecificMessage
 from pipecat.utils.asyncio.task_manager import BaseTaskManager
 from pipecat.utils.base_object import BaseObject
 from pipecat.utils.context.llm_context_summarization import (
     DEFAULT_SUMMARIZATION_TIMEOUT,
-    LLMContextSummarizationConfig,
+    LLMAutoContextSummarizationConfig,
     LLMContextSummarizationUtil,
+    LLMContextSummaryConfig,
 )
 
 if TYPE_CHECKING:
@@ -55,9 +57,20 @@ class SummaryAppliedEvent:
 class LLMContextSummarizer(BaseObject):
     """Summarizer for managing LLM context summarization.
 
-    This class manages automatic context summarization when token or message
-    limits are reached. It monitors the LLM context size, triggers
-    summarization requests, and applies the results to compress conversation history.
+    This class manages context summarization, either automatically when token or
+    message limits are reached, or on-demand when an ``LLMSummarizeContextFrame``
+    is received. It monitors the LLM context size, triggers summarization requests,
+    and applies the results to compress conversation history.
+
+    When ``auto_trigger=True`` (the default), summarization is triggered
+    automatically based on the configured thresholds in
+    ``LLMAutoContextSummarizationConfig``. When ``auto_trigger=False``,
+    threshold checks are skipped and summarization only happens when an
+    ``LLMSummarizeContextFrame`` is explicitly pushed into the pipeline.
+
+    Both modes can coexist: set ``auto_trigger=True`` and also push
+    ``LLMSummarizeContextFrame`` at any time to force an immediate summarization
+    (subject to the ``_summarization_in_progress`` guard).
 
     Event handlers available:
 
@@ -88,18 +101,26 @@ class LLMContextSummarizer(BaseObject):
         self,
         *,
         context: LLMContext,
-        config: Optional[LLMContextSummarizationConfig] = None,
+        config: Optional[LLMAutoContextSummarizationConfig] = None,
+        auto_trigger: bool = True,
     ):
         """Initialize the context summarizer.
 
         Args:
             context: The LLM context to monitor and summarize.
-            config: Configuration for summarization behavior. If None, uses default config.
+            config: Auto-summarization configuration controlling both trigger
+                thresholds and default summary generation parameters. If None,
+                uses default ``LLMAutoContextSummarizationConfig`` values.
+            auto_trigger: Whether to automatically trigger summarization when
+                thresholds are reached. When False, summarization only happens
+                when an ``LLMSummarizeContextFrame`` is pushed into the pipeline.
+                Defaults to True.
         """
         super().__init__()
 
         self._context = context
-        self._config = config or LLMContextSummarizationConfig()
+        self._auto_config = config or LLMAutoContextSummarizationConfig()
+        self._auto_trigger = auto_trigger
 
         self._task_manager: Optional[BaseTaskManager] = None
 
@@ -137,6 +158,8 @@ class LLMContextSummarizer(BaseObject):
         """
         if isinstance(frame, LLMFullResponseStartFrame):
             await self._handle_llm_response_start(frame)
+        elif isinstance(frame, LLMSummarizeContextFrame):
+            await self._handle_manual_summarization_request(frame)
         elif isinstance(frame, LLMContextSummaryResultFrame):
             await self._handle_summary_result(frame)
         elif isinstance(frame, InterruptionFrame):
@@ -151,12 +174,24 @@ class LLMContextSummarizer(BaseObject):
         if self._should_summarize():
             await self._request_summarization()
 
-    async def _handle_interruption(self):
-        """Handle interruption by canceling summarization in progress.
+    async def _handle_manual_summarization_request(self, frame: LLMSummarizeContextFrame):
+        """Handle an explicit on-demand summarization request.
+
+        Reuses the same ``_request_summarization()`` code path as auto mode,
+        so bookkeeping (``_summarization_in_progress``,
+        ``_pending_summary_request_id``) is always updated correctly.
 
         Args:
-            frame: The interruption frame.
+            frame: The manual summarization request frame, optionally carrying
+                a per-request :class:`~pipecat.utils.context.llm_context_summarization.LLMContextSummaryConfig`.
         """
+        if self._summarization_in_progress:
+            logger.debug(f"{self}: Summarization already in progress, ignoring manual request")
+            return
+        await self._request_summarization(config_override=frame.config)
+
+    async def _handle_interruption(self):
+        """Handle interruption by canceling summarization in progress."""
         # Reset summarization state to allow new requests. This is necessary because
         # the request frame (LLMContextSummaryRequestFrame) may have been cancelled
         # during interruption. We preserve _pending_summary_request_id to handle the
@@ -179,12 +214,16 @@ class LLMContextSummarizer(BaseObject):
 
         Returns:
             True if all conditions are met:
+            - ``auto_trigger`` is enabled
             - No summarization currently in progress
             - AND either:
-              - Token count exceeds max_context_tokens
-              - OR message count exceeds max_unsummarized_messages since last summary
+              - Token count exceeds ``max_context_tokens``
+              - OR message count exceeds ``max_unsummarized_messages`` since last summary
         """
         logger.trace(f"{self}: Checking if context summarization is needed")
+
+        if not self._auto_trigger:
+            return False
 
         if self._summarization_in_progress:
             logger.debug(f"{self}: Summarization already in progress")
@@ -195,20 +234,20 @@ class LLMContextSummarizer(BaseObject):
         num_messages = len(self._context.messages)
 
         # Check if we've reached the token limit
-        token_limit = self._config.max_context_tokens
+        token_limit = self._auto_config.max_context_tokens
         token_limit_exceeded = total_tokens >= token_limit
 
         # Check if we've exceeded max unsummarized messages
         messages_since_summary = len(self._context.messages) - 1
         message_threshold_exceeded = (
-            messages_since_summary >= self._config.max_unsummarized_messages
+            messages_since_summary >= self._auto_config.max_unsummarized_messages
         )
 
         logger.trace(
             f"{self}: Context has {num_messages} messages, "
             f"~{total_tokens} tokens (limit: {token_limit}), "
             f"{messages_since_summary} messages since last summary "
-            f"(message threshold: {self._config.max_unsummarized_messages})"
+            f"(message threshold: {self._auto_config.max_unsummarized_messages})"
         )
 
         # Trigger if either limit is exceeded
@@ -223,23 +262,30 @@ class LLMContextSummarizer(BaseObject):
             reason.append(f"~{total_tokens} tokens (>={token_limit} limit)")
         if message_threshold_exceeded:
             reason.append(
-                f"{messages_since_summary} messages (>={self._config.max_unsummarized_messages} threshold)"
+                f"{messages_since_summary} messages (>={self._auto_config.max_unsummarized_messages} threshold)"
             )
 
         logger.debug(f"{self}: ✓ Summarization needed - {', '.join(reason)}")
         return True
 
-    async def _request_summarization(self):
+    async def _request_summarization(
+        self, config_override: Optional[LLMContextSummaryConfig] = None
+    ):
         """Request context summarization from LLM service.
 
         Creates a summarization request frame and either handles it directly
         using a dedicated LLM (if configured) or emits it via event handler
-        for the pipeline's primary LLM. Tracks the request ID to match async
-        responses and prevent race conditions.
+        for the pipeline's primary LLM.
+        Tracks the request ID to match async responses and prevent race conditions.
+
+        Args:
+            config_override: Optional per-request summary configuration. If provided,
+                overrides the default summary generation settings from
+                ``self._auto_config.summary_config``.
         """
         # Generate unique request ID
         request_id = str(uuid.uuid4())
-        min_keep = self._config.min_messages_after_summary
+        summary_config = config_override or self._auto_config.summary_config
 
         # Mark summarization in progress
         self._summarization_in_progress = True
@@ -251,16 +297,16 @@ class LLMContextSummarizer(BaseObject):
         request_frame = LLMContextSummaryRequestFrame(
             request_id=request_id,
             context=self._context,
-            min_messages_to_keep=min_keep,
-            target_context_tokens=self._config.target_context_tokens,
-            summarization_prompt=self._config.summary_prompt,
-            summarization_timeout=self._config.summarization_timeout,
+            min_messages_to_keep=summary_config.min_messages_after_summary,
+            target_context_tokens=summary_config.target_context_tokens,
+            summarization_prompt=summary_config.summary_prompt,
+            summarization_timeout=summary_config.summarization_timeout,
         )
 
-        if self._config.llm:
+        if summary_config.llm:
             # Use dedicated LLM directly — no need to involve the pipeline
             self.task_manager.create_task(
-                self._generate_summary_with_dedicated_llm(self._config.llm, request_frame),
+                self._generate_summary_with_dedicated_llm(summary_config.llm, request_frame),
                 f"{self}-dedicated-llm-summary",
             )
         else:
@@ -323,7 +369,9 @@ class LLMContextSummarizer(BaseObject):
         """
         logger.debug(f"{self}: Received summary result (request_id={frame.request_id})")
 
-        # Check if this is the result we're waiting for
+        # Check if this is the result we're waiting for. Both auto and manual
+        # summarization set _pending_summary_request_id via _request_summarization(),
+        # so this check always applies.
         if frame.request_id != self._pending_summary_request_id:
             logger.debug(f"{self}: Ignoring stale summary result (request_id={frame.request_id})")
             return
@@ -360,7 +408,7 @@ class LLMContextSummarizer(BaseObject):
         if last_summarized_index >= len(self._context.messages):
             return False
 
-        min_keep = self._config.min_messages_after_summary
+        min_keep = self._auto_config.summary_config.min_messages_after_summary
         remaining = len(self._context.messages) - 1 - last_summarized_index
         if remaining < min_keep:
             return False
@@ -377,6 +425,7 @@ class LLMContextSummarizer(BaseObject):
             summary: The generated summary text.
             last_summarized_index: Index of the last message that was summarized.
         """
+        config = self._auto_config.summary_config
         messages = self._context.messages
 
         # Find the first system message to preserve. LLMSpecificMessage instances are excluded
@@ -397,7 +446,7 @@ class LLMContextSummarizer(BaseObject):
 
         # Create summary message as a user message (the summary is context
         # provided *to* the assistant, not something the assistant said)
-        summary_content = self._config.summary_message_template.format(summary=summary)
+        summary_content = config.summary_message_template.format(summary=summary)
         summary_message = {"role": "user", "content": summary_content}
 
         # Reconstruct context

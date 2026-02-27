@@ -43,6 +43,7 @@ if TYPE_CHECKING:
     from pipecat.processors.aggregators.llm_context import LLMContext, NotGiven
     from pipecat.processors.frame_processor import FrameProcessor
     from pipecat.services.settings import ServiceSettings
+    from pipecat.utils.context.llm_context_summarization import LLMContextSummaryConfig
     from pipecat.utils.tracing.tracing_context import TracingContext
 
 
@@ -1998,6 +1999,22 @@ class LLMAssistantPushAggregationFrame(ControlFrame):
     in the aggregation buffer is immediately committed to the conversation context as
     an assistant message, without waiting for an ``LLMFullResponseEndFrame``.
     """
+
+
+@dataclass
+class LLMSummarizeContextFrame(ControlFrame):
+    """Frame requesting on-demand context summarization.
+
+    Push this frame into the pipeline to trigger a manual context summarization.
+
+    Parameters:
+        config: Optional per-request override for summary generation settings
+            (prompt, token budget, messages to keep). If ``None``, the
+            summarizer's default :class:`~pipecat.utils.context.llm_context_summarization.LLMContextSummaryConfig`
+            is used.
+    """
+
+    config: Optional["LLMContextSummaryConfig"] = None
 
 
 @dataclass
