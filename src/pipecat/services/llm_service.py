@@ -62,6 +62,7 @@ from pipecat.services.ai_service import AIService
 from pipecat.services.settings import LLMSettings
 from pipecat.turns.user_turn_completion_mixin import UserTurnCompletionLLMServiceMixin
 from pipecat.utils.context.llm_context_summarization import (
+    DEFAULT_SUMMARIZATION_TIMEOUT,
     LLMContextSummarizationUtil,
 )
 
@@ -436,18 +437,15 @@ class LLMService(UserTurnCompletionLLMServiceMixin, AIService):
         last_index = -1
         error = None
 
+        timeout = frame.summarization_timeout or DEFAULT_SUMMARIZATION_TIMEOUT
+
         try:
-            if frame.summarization_timeout:
-                summary, last_index = await asyncio.wait_for(
-                    self._generate_summary(frame),
-                    timeout=frame.summarization_timeout,
-                )
-            else:
-                summary, last_index = await self._generate_summary(frame)
-        except asyncio.TimeoutError:
-            await self.push_error(
-                error_msg=f"Context summarization timed out after {frame.summarization_timeout}s"
+            summary, last_index = await asyncio.wait_for(
+                self._generate_summary(frame),
+                timeout=timeout,
             )
+        except asyncio.TimeoutError:
+            await self.push_error(error_msg=f"Context summarization timed out after {timeout}s")
         except Exception as e:
             error = f"Error generating context summary: {e}"
             await self.push_error(error, exception=e)

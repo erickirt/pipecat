@@ -24,6 +24,7 @@ from pipecat.processors.aggregators.llm_context import LLMContext, LLMSpecificMe
 from pipecat.utils.asyncio.task_manager import BaseTaskManager
 from pipecat.utils.base_object import BaseObject
 from pipecat.utils.context.llm_context_summarization import (
+    DEFAULT_SUMMARIZATION_TIMEOUT,
     LLMContextSummarizationConfig,
     LLMContextSummarizationUtil,
 )
@@ -278,21 +279,20 @@ class LLMContextSummarizer(BaseObject):
             llm: The dedicated LLM service to use for summarization.
             frame: The summarization request frame.
         """
+        timeout = frame.summarization_timeout or DEFAULT_SUMMARIZATION_TIMEOUT
+
         try:
-            if frame.summarization_timeout:
-                summary, last_index = await asyncio.wait_for(
-                    llm._generate_summary(frame),
-                    timeout=frame.summarization_timeout,
-                )
-            else:
-                summary, last_index = await llm._generate_summary(frame)
+            summary, last_index = await asyncio.wait_for(
+                llm._generate_summary(frame),
+                timeout=timeout,
+            )
             result_frame = LLMContextSummaryResultFrame(
                 request_id=frame.request_id,
                 summary=summary,
                 last_summarized_index=last_index,
             )
         except asyncio.TimeoutError:
-            error = f"Context summarization timed out after {frame.summarization_timeout}s"
+            error = f"Context summarization timed out after {timeout}s"
             logger.error(f"{self}: {error}")
             result_frame = LLMContextSummaryResultFrame(
                 request_id=frame.request_id,

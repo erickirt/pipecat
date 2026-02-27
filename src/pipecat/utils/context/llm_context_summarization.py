@@ -20,6 +20,9 @@ from loguru import logger
 
 from pipecat.processors.aggregators.llm_context import LLMContext, LLMSpecificMessage
 
+# Fallback timeout (seconds) used when summarization_timeout is None.
+DEFAULT_SUMMARIZATION_TIMEOUT = 120.0
+
 # Token estimation constants
 CHARS_PER_TOKEN = 4  # Industry-standard heuristic: 1 token ≈ 4 characters
 TOKEN_OVERHEAD_PER_MESSAGE = 10  # Estimated structural overhead per message
@@ -89,7 +92,6 @@ class LLMContextSummarizationConfig:
         summarization_timeout: Maximum time in seconds to wait for the LLM to
             generate a summary. If the call exceeds this timeout, summarization
             is aborted with an error and future summarizations are unblocked.
-            Set to None to disable the timeout.
     """
 
     max_context_tokens: int = 8000
@@ -99,7 +101,7 @@ class LLMContextSummarizationConfig:
     summarization_prompt: Optional[str] = None
     summary_message_template: str = "Conversation summary: {summary}"
     llm: Optional["LLMService"] = None
-    summarization_timeout: Optional[float] = 120.0
+    summarization_timeout: float = DEFAULT_SUMMARIZATION_TIMEOUT
 
     def __post_init__(self):
         """Validate configuration parameters."""

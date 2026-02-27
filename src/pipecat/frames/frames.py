@@ -2020,7 +2020,7 @@ class LLMContextSummaryRequestFrame(ControlFrame):
         summarization_prompt: System prompt instructing the LLM how to generate
             the summary.
         summarization_timeout: Maximum time in seconds for the LLM to generate a
-            summary. None means no timeout.
+            summary. When None, a default timeout of 120s is applied.
     """
 
     request_id: str
