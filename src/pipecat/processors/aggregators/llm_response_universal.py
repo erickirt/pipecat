@@ -16,7 +16,7 @@ import json
 import warnings
 from abc import abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Literal, Optional, Set, Type
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Set, Type
 
 from loguru import logger
 
@@ -39,6 +39,7 @@ from pipecat.frames.frames import (
     LLMContextAssistantTimestampFrame,
     LLMContextFrame,
     LLMContextSummaryRequestFrame,
+    LLMContextSummaryResultFrame,
     LLMFullResponseEndFrame,
     LLMFullResponseStartFrame,
     LLMMessagesAppendFrame,
@@ -82,6 +83,9 @@ from pipecat.turns.user_turn_strategies import ExternalUserTurnStrategies, UserT
 from pipecat.utils.context.llm_context_summarization import LLMContextSummarizationConfig
 from pipecat.utils.string import TextPartForConcatenation, concatenate_aggregated_text
 from pipecat.utils.time import time_now_iso8601
+
+if TYPE_CHECKING:
+    from pipecat.services.llm_service import LLMService
 
 
 @dataclass
@@ -1248,13 +1252,56 @@ class LLMAssistantAggregator(LLMContextAggregator):
     ):
         """Handle summarization request from the summarizer.
 
-        Push the request frame UPSTREAM to the LLM service for processing.
+        If a dedicated summarization LLM is configured, generates the summary
+        directly and feeds the result to the summarizer. Otherwise, pushes the
+        request frame upstream to the pipeline's primary LLM service.
 
         Args:
             summarizer: The summarizer that generated the request.
             frame: The summarization request frame to broadcast.
         """
-        await self.push_frame(frame, FrameDirection.UPSTREAM)
+        summarization_llm = (
+            self._params.context_summarization_config.llm
+            if self._params.context_summarization_config
+            else None
+        )
+
+        if summarization_llm:
+            self.create_task(self._generate_summary_with_dedicated_llm(summarization_llm, frame))
+        else:
+            await self.push_frame(frame, FrameDirection.UPSTREAM)
+
+    async def _generate_summary_with_dedicated_llm(
+        self, llm: "LLMService", frame: LLMContextSummaryRequestFrame
+    ):
+        """Generate summary using a dedicated LLM service.
+
+        Calls the dedicated LLM's _generate_summary directly and feeds the
+        result back to the summarizer, bypassing the pipeline.
+
+        Args:
+            llm: The dedicated LLM service to use for summarization.
+            frame: The summarization request frame.
+        """
+        try:
+            summary, last_index = await llm._generate_summary(frame)
+            result_frame = LLMContextSummaryResultFrame(
+                request_id=frame.request_id,
+                summary=summary,
+                last_summarized_index=last_index,
+            )
+        except Exception as e:
+            error = f"Error generating context summary: {e}"
+            await self.push_error(error, exception=e)
+            result_frame = LLMContextSummaryResultFrame(
+                request_id=frame.request_id,
+                summary="",
+                last_summarized_index=-1,
+                error=f"Error generating context summary: {e}",
+            )
+
+        if self._summarizer:
+            await self._summarizer.process_frame(result_frame)
 
 
 class LLMContextAggregatorPair:

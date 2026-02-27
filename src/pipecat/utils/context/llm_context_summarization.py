@@ -11,7 +11,10 @@ context when token limits are reached, enabling efficient long-running conversat
 """
 
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
+
+if TYPE_CHECKING:
+    from pipecat.services.llm_service import LLMService
 
 from loguru import logger
 
@@ -78,6 +81,11 @@ class LLMContextSummarizationConfig:
             for the generated summary text. Allows applications to wrap the
             summary in custom delimiters (e.g., XML tags) so that system
             prompts can distinguish summaries from live conversation.
+        llm: Optional separate LLM service for generating summaries. When set,
+            summarization requests are sent to this service instead of the
+            pipeline's primary LLM. Useful for routing summarization to a
+            cheaper/faster model (e.g., Gemini Flash) while keeping an
+            expensive model for conversation. If None, uses the pipeline LLM.
     """
 
     max_context_tokens: int = 8000
@@ -86,6 +94,7 @@ class LLMContextSummarizationConfig:
     min_messages_after_summary: int = 4
     summarization_prompt: Optional[str] = None
     summary_message_template: str = "Conversation summary: {summary}"
+    llm: Optional["LLMService"] = None
 
     def __post_init__(self):
         """Validate configuration parameters."""
