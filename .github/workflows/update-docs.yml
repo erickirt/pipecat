@@ -44,12 +44,6 @@ jobs:
           token: ${{ secrets.DOCS_SYNC_TOKEN }}
           path: _docs
 
-      - name: Get version info
-        id: version
-        run: |
-          echo "release=$(git describe --tags --abbrev=0 2>/dev/null || echo 'unknown')" >> "$GITHUB_OUTPUT"
-          echo "dev=$(git describe --tags 2>/dev/null || echo 'unknown')" >> "$GITHUB_OUTPUT"
-
       - name: Resolve PR number
         id: pr
         run: |
@@ -74,7 +68,6 @@ jobs:
             1. Read the skill instructions at `.claude/skills/update-docs/SKILL.md`
             2. Read the source-to-doc mapping at `.claude/skills/update-docs/SOURCE_DOC_MAPPING.md`
             3. The docs repository is checked out at `./_docs/`
-            4. Current pipecat version: ${{ steps.version.outputs.release }} (release), ${{ steps.version.outputs.dev }} (dev)
 
             ## Get the diff
 
@@ -119,11 +112,10 @@ jobs:
             git push -u origin docs/pr-${{ steps.pr.outputs.number }}
             GH_TOKEN=$DOCS_SYNC_TOKEN gh pr create \
               --repo pipecat-ai/docs \
+              --label auto-docs \
               --title "docs: update for pipecat PR #${{ steps.pr.outputs.number }}" \
               --body "$(cat <<'BODY'
             Automated documentation update for [pipecat PR #${{ steps.pr.outputs.number }}](https://github.com/pipecat-ai/pipecat/pull/${{ steps.pr.outputs.number }}).
-
-            Pipecat version: ${{ steps.version.outputs.release }} (${{ steps.version.outputs.dev }})
 
             ## Changes
             <summarize each doc page updated and what changed>
