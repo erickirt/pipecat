@@ -301,6 +301,8 @@ class RimeTTSService(AudioContextTTSService):
             params["lang"] = self._settings.language
         if self._settings.segment is not None:
             params["segment"] = self._settings.segment
+        if self._settings.speedAlpha is not None:
+            params["speedAlpha"] = self._settings.speedAlpha
 
         if self._settings.model == "arcana":
             if self._settings.repetition_penalty is not None:
@@ -310,8 +312,6 @@ class RimeTTSService(AudioContextTTSService):
             if self._settings.top_p is not None:
                 params["top_p"] = self._settings.top_p
         else:  # mistv2/mist
-            if self._settings.speedAlpha is not None:
-                params["speedAlpha"] = self._settings.speedAlpha
             if self._settings.reduceLatency is not None:
                 params["reduceLatency"] = self._settings.reduceLatency
             if self._settings.pauseBetweenBrackets is not None:
