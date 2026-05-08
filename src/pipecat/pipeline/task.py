@@ -654,27 +654,19 @@ class PipelineTask(BasePipelineTask):
 
     async def _create_tasks(self):
         """Create and start all pipeline processing tasks."""
-        self._process_push_task = self.create_task(
-            self._process_push_queue(), "_process_push_queue"
-        )
+        self._process_push_task = self.create_task(self._process_push_queue())
         return self._process_push_task
 
     def _maybe_start_heartbeat_tasks(self):
         """Start heartbeat tasks if heartbeats are enabled and not already running."""
         if self._params.enable_heartbeats and self._heartbeat_push_task is None:
-            self._heartbeat_push_task = self.create_task(
-                self._heartbeat_push_handler(), "_heartbeat_push_handler"
-            )
-            self._heartbeat_monitor_task = self.create_task(
-                self._heartbeat_monitor_handler(), "_heartbeat_monitor_handler"
-            )
+            self._heartbeat_push_task = self.create_task(self._heartbeat_push_handler())
+            self._heartbeat_monitor_task = self.create_task(self._heartbeat_monitor_handler())
 
     def _maybe_start_idle_task(self):
         """Start idle monitoring task if idle timeout is configured."""
         if self._idle_timeout_secs:
-            self._idle_monitor_task = self.create_task(
-                self._idle_monitor_handler(), "_idle_monitor_handler"
-            )
+            self._idle_monitor_task = self.create_task(self._idle_monitor_handler())
 
     async def _cancel_tasks(self):
         """Cancel all running pipeline tasks."""
@@ -759,12 +751,14 @@ class PipelineTask(BasePipelineTask):
 
     async def _setup(self, params: PipelineTaskParams):
         """Set up the pipeline task and all processors."""
+        await super().setup(self._task_manager)
+
         mgr_params = TaskManagerParams(loop=params.loop)
-        self._task_manager.setup(mgr_params)
+        self.task_manager.setup(mgr_params)
 
         setup = FrameProcessorSetup(
             clock=self._clock,
-            task_manager=self._task_manager,
+            task_manager=self.task_manager,
             observer=self._observer,
             pipeline_task=self,
             # Populate the deprecated `tool_resources` field for backwards
