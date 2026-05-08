@@ -383,18 +383,6 @@ class GeminiLiveLLMService(LLMService[GeminiLLMAdapter]):
         """
         return not self._is_gemini_3
 
-    def _function_is_async(self, name: str) -> bool:
-        """Whether the named function was registered with cancel_on_interruption=False.
-
-        Mirrors the lookup pattern in ``LLMService.run_function_calls``:
-        a name-specific registry entry takes precedence; if there isn't
-        one, fall back to the ``None``-keyed catch-all entry.
-        """
-        item = self._functions.get(name)
-        if item is None:
-            item = self._functions.get(None)
-        return item is not None and not item.cancel_on_interruption
-
     def __init__(
         self,
         *,
