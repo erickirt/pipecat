@@ -649,7 +649,12 @@ class LLMService(UserTurnCompletionLLMServiceMixin, AIService, Generic[TAdapter]
                 interruption occurs. When ``False`` the call is treated as
                 asynchronous: the LLM continues the conversation immediately
                 without waiting for the result, and the result is injected later
-                via a developer message. Defaults to True.
+                via a developer message. Defaults to True. Note: realtime
+                LLM services deliver only the final result to the provider;
+                intermediate streamed results (reported via
+                ``FunctionCallResultProperties(is_final=False)``) are
+                dropped and an error is raised. Use a non-realtime LLM
+                service if your tool needs to stream intermediate results.
             timeout_secs: Optional per-tool timeout in seconds. Overrides the global
                 ``function_call_timeout_secs`` for this specific function. Defaults to
                 None, which uses the global timeout.
@@ -687,7 +692,12 @@ class LLMService(UserTurnCompletionLLMServiceMixin, AIService, Generic[TAdapter]
                 interruption occurs. When ``False`` the call is treated as
                 asynchronous: the LLM continues the conversation immediately
                 without waiting for the result, and the result is injected later
-                via a developer message. Defaults to True.
+                via a developer message. Defaults to True. Note: realtime
+                LLM services deliver only the final result to the provider;
+                intermediate streamed results (reported via
+                ``FunctionCallResultProperties(is_final=False)``) are
+                dropped and an error is raised. Use a non-realtime LLM
+                service if your tool needs to stream intermediate results.
             timeout_secs: Optional per-tool timeout in seconds. Overrides the global
                 ``function_call_timeout_secs`` for this specific function. Defaults to
                 None, which uses the global timeout.
