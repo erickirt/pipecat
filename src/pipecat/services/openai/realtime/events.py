@@ -18,6 +18,8 @@ from pipecat.adapters.schemas.tools_schema import ToolsSchema
 # session properties
 #
 
+GPT_REALTIME_WHISPER_MODEL = "gpt-realtime-whisper"
+
 
 class AudioFormat(BaseModel):
     """Base class for audio format configuration."""
@@ -60,20 +62,21 @@ class PCMAAudioFormat(AudioFormat):
 class InputAudioTranscription(BaseModel):
     """Configuration for audio transcription settings."""
 
-    model: str = "gpt-4o-transcribe"
+    model: str = GPT_REALTIME_WHISPER_MODEL
     language: str | None
     prompt: str | None
 
     def __init__(
         self,
-        model: str | None = "gpt-4o-transcribe",
+        model: str | None = GPT_REALTIME_WHISPER_MODEL,
         language: str | None = None,
         prompt: str | None = None,
     ):
         """Initialize InputAudioTranscription.
 
         Args:
-            model: Transcription model to use (e.g., "gpt-4o-transcribe", "whisper-1").
+            model: Transcription model to use (e.g., "gpt-realtime-whisper",
+                "gpt-4o-transcribe", "whisper-1").
             language: Optional language code for transcription.
             prompt: Optional transcription hint text.
         """
