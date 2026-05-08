@@ -926,15 +926,22 @@ class GeminiLiveLLMService(LLMService[GeminiLLMAdapter]):
                         error_msg="Gemini Live does not support streamed async tool results.",
                     )
                     continue
-                # kind == "final": deliver via the formal tool-response channel
-                # — same path as a synchronous tool result, just delayed.
-                tool_name = self._tool_call_id_to_name.get(
-                    async_payload.tool_call_id, "tool_call_result"
-                )
-                response_dict = GeminiLLMAdapter.to_function_response_dict(async_payload.result)
-                if send_new_results:
-                    await self._tool_result(async_payload.tool_call_id, tool_name, response_dict)
-                self._completed_tool_calls.add(async_payload.tool_call_id)
+                if async_payload.kind == "final":
+                    # Deliver via the formal tool-response channel — same
+                    # path as a synchronous tool result, just delayed.
+                    tool_name = self._tool_call_id_to_name.get(
+                        async_payload.tool_call_id, "tool_call_result"
+                    )
+                    response_dict = GeminiLLMAdapter.to_function_response_dict(async_payload.result)
+                    if send_new_results:
+                        await self._tool_result(
+                            async_payload.tool_call_id, tool_name, response_dict
+                        )
+                    self._completed_tool_calls.add(async_payload.tool_call_id)
+                    continue
+                # Defensive: any async-tool message must not fall through
+                # to the regular tool-result block below, even if it
+                # carries a kind we don't recognize.
                 continue
 
             # Look for newly-completed "regular" (as opposed to async-tool) results
