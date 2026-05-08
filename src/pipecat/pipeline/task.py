@@ -303,7 +303,7 @@ class PipelineTask(BasePipelineTask):
 
         # This task maneger will handle all the asyncio tasks created by this
         # PipelineTask and its frame processors.
-        self._task_manager = task_manager or TaskManager()
+        self._pipeline_task_manager = task_manager or TaskManager()
 
         # This queue is the queue used to push frames to the pipeline.
         self._push_queue = asyncio.Queue()
@@ -386,7 +386,7 @@ class PipelineTask(BasePipelineTask):
         # The task observer acts as a proxy to the provided observers. This way,
         # we only need to pass a single observer (using the StartFrame) which
         # then just acts as a proxy.
-        self._observer = TaskObserver(observers=observers, task_manager=self._task_manager)
+        self._observer = TaskObserver(observers=observers)
 
         # These events can be used to check which frames make it to the source
         # or sink processors. Instead of calling the event handlers for every
@@ -751,7 +751,7 @@ class PipelineTask(BasePipelineTask):
 
     async def _setup(self, params: PipelineTaskParams):
         """Set up the pipeline task and all processors."""
-        await super().setup(self._task_manager)
+        await super().setup(self._pipeline_task_manager)
 
         mgr_params = TaskManagerParams(loop=params.loop)
         self.task_manager.setup(mgr_params)
@@ -774,6 +774,7 @@ class PipelineTask(BasePipelineTask):
         await self._load_setup_files()
 
         # Start task observer.
+        await self._observer.setup(self.task_manager)
         await self._observer.start()
 
     async def _cleanup(self, cleanup_pipeline: bool):
