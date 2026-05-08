@@ -60,15 +60,22 @@ except ModuleNotFoundError as e:
     raise Exception(f"Missing module: {e}")
 
 
-# Placeholder shipped as the client_tool_result for async-registered functions
-# (cancel_on_interruption=False). Sending it immediately unfreezes the
-# conversation so the model can keep talking while the real tool runs; the
-# actual result is injected later as user-side text once the tool finishes.
-_ASYNC_TOOL_PLACEHOLDER_RESULT = (
+# Result shipped as the client_tool_result when we see an async-tool
+# "started" message — i.e. when an async-registered function call
+# (cancel_on_interruption=False) is invoked. Sending it immediately
+# unfreezes the conversation so the model can keep talking while the
+# real tool runs; the actual result is injected later as user-side text
+# once the tool finishes.
+_ASYNC_TOOL_STARTED_RESULT = (
     "The actual result for this tool call is not yet ready. A follow-up "
     "message will arrive shortly with the actual result. In the meantime, "
     "keep the conversation going naturally."
 )
+
+# Template for the user-side text we inject when the async-tool "final"
+# message arrives. Bracketed framing helps the model treat this as a
+# tool-result update rather than fresh user input.
+_ASYNC_TOOL_FINAL_RESULT_TEMPLATE = "[Async tool result for tool_call_id={tool_call_id}] {result}"
 
 
 @dataclass
@@ -468,12 +475,13 @@ class UltravoxRealtimeLLMService(LLMService):
                         continue
                     # The placeholder client_tool_result has already
                     # "completed" the tool call from Ultravox's perspective,
-                    # so the actual result is delivered as user-side text.
-                    # Bracketed framing helps the model treat this as a
-                    # tool-result update rather than fresh user input.
+                    # so the actual result is delivered as user-side text
+                    # (see _ASYNC_TOOL_FINAL_RESULT_TEMPLATE).
                     await self._send_user_text(
-                        f"[Async tool result for tool_call_id="
-                        f"{async_payload.tool_call_id}] {async_payload.result}"
+                        _ASYNC_TOOL_FINAL_RESULT_TEMPLATE.format(
+                            tool_call_id=async_payload.tool_call_id,
+                            result=async_payload.result,
+                        )
                     )
                     self._completed_tool_calls.add(async_payload.tool_call_id)
                     continue
@@ -655,7 +663,7 @@ class UltravoxRealtimeLLMService(LLMService):
             self._function_is_async(tool_name)
             and invocation_id not in self._started_placeholder_sent
         ):
-            await self._send_tool_result(invocation_id, _ASYNC_TOOL_PLACEHOLDER_RESULT)
+            await self._send_tool_result(invocation_id, _ASYNC_TOOL_STARTED_RESULT)
             self._started_placeholder_sent.add(invocation_id)
 
         await self.run_function_calls(
