@@ -1013,7 +1013,7 @@ class PipelineTask(BasePipelineTask):
 
     def _print_dangling_tasks(self):
         """Log any dangling tasks that haven't been properly cleaned up."""
-        tasks = [t.get_name() for t in self._task_manager.current_tasks()]
+        tasks = [t.get_name() for t in self.task_manager.current_tasks()]
         if tasks:
             logger.warning(f"{self} dangling tasks detected: {tasks}")
 
