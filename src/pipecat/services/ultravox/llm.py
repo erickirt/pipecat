@@ -45,7 +45,8 @@ from pipecat.frames.frames import (
     UserAudioRawFrame,
     VADUserStoppedSpeakingFrame,
 )
-from pipecat.processors.aggregators.llm_context import LLMContext
+from pipecat.processors.aggregators import async_tool_messages
+from pipecat.processors.aggregators.llm_context import LLMContext, LLMSpecificMessage
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.llm_service import FunctionCallFromLLM, LLMService
 from pipecat.services.settings import NOT_GIVEN, LLMSettings, _NotGiven, assert_given
@@ -218,6 +219,7 @@ class UltravoxRealtimeLLMService(LLMService):
         self._disconnecting = False
         self._bot_responding: Literal[None, "text", "voice"] = None
         self._last_user_id: str | None = None
+        self._async_tool_warning_logged: bool = False
 
         self._sample_rate = 48000
         self._resampler = create_stream_resampler()
@@ -413,6 +415,33 @@ class UltravoxRealtimeLLMService(LLMService):
             await self.push_frame(frame, direction)
 
     async def _handle_context(self, context: LLMContext):
+        # If the user registered a function with cancel_on_interruption=False,
+        # the aggregator emits async-tool-style messages into the context. We
+        # don't (currently) honor those on Ultravox: the Ultravox API freezes
+        # the conversation during tool execution
+        # (https://docs.ultravox.ai/tools/async-tools#custom-tool-timeouts),
+        # so the "keep talking while the tool runs" intent of the flag is
+        # structurally not achievable here. Surface a one-time warning so
+        # users see they're not getting what they expect.
+        if not self._async_tool_warning_logged:
+            for message in context.get_messages():
+                if isinstance(message, LLMSpecificMessage):
+                    continue
+                if async_tool_messages.parse_message(message) is not None:
+                    logger.error(
+                        f"{self}: cancel_on_interruption=False is not supported by "
+                        f"Ultravox: the conversation freezes during tool execution, so "
+                        f"the 'keep talking while the tool runs' intent of the flag "
+                        f"would not be achievable anyway. Use "
+                        f"cancel_on_interruption=True (the default) or a non-realtime "
+                        f"LLM service if your tool needs the async semantics."
+                    )
+                    await self.push_error(
+                        error_msg="cancel_on_interruption=False is not supported by Ultravox.",
+                    )
+                    self._async_tool_warning_logged = True
+                    break
+
         # Ultravox handles all context server-side, so the only context we may
         # need to handle here is new function call results.
         for message in reversed(context.messages):
