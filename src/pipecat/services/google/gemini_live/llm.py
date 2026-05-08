@@ -374,6 +374,27 @@ class GeminiLiveLLMService(LLMService[GeminiLLMAdapter]):
         """Check if the current model is a Gemini 3.x model."""
         return "gemini-3" in (assert_given(self._settings.model) or "")
 
+    @property
+    def _supports_non_blocking_tools(self) -> bool:
+        """Whether the current model supports the NON_BLOCKING tool behavior + scheduling hints.
+
+        Gemini 3.x has not yet shipped support for NON_BLOCKING function
+        declarations or for the ``scheduling`` field on FunctionResponse.
+        """
+        return not self._is_gemini_3
+
+    def _function_is_async(self, name: str) -> bool:
+        """Whether the named function was registered with cancel_on_interruption=False.
+
+        Mirrors the lookup pattern in ``LLMService.run_function_calls``:
+        a name-specific registry entry takes precedence; if there isn't
+        one, fall back to the ``None``-keyed catch-all entry.
+        """
+        item = self._functions.get(name)
+        if item is None:
+            item = self._functions.get(None)
+        return item is not None and not item.cancel_on_interruption
+
     def __init__(
         self,
         *,
@@ -564,6 +585,7 @@ class GeminiLiveLLMService(LLMService[GeminiLLMAdapter]):
         # tool's final result back to the provider, since the async-tool
         # message in the context only carries the id.
         self._tool_call_id_to_name: dict[str, str] = {}
+        self._async_tool_warning_logged: bool = False
 
     def create_client(self):
         """Create the Gemini API client instance. Subclasses can override this."""
@@ -848,6 +870,32 @@ class GeminiLiveLLMService(LLMService[GeminiLLMAdapter]):
             await self._process_completed_function_calls(send_new_results=True)
 
     async def _process_completed_function_calls(self, send_new_results: bool):
+        # If the user registered a function with cancel_on_interruption=False,
+        # the aggregator emits async-tool-style messages into the context. On
+        # models that don't support NON_BLOCKING tool calls, the conversation
+        # freezes during tool execution, so the "keep talking while the tool
+        # runs" intent of the flag is structurally not achievable. Surface a
+        # one-time warning so users see they're not getting what they expect.
+        if not self._supports_non_blocking_tools and not self._async_tool_warning_logged:
+            for message in self._context.get_messages():
+                if isinstance(message, LLMSpecificMessage):
+                    continue
+                if async_tool_messages.parse_message(message) is not None:
+                    logger.error(
+                        f"{self}: cancel_on_interruption=False is not properly supported "
+                        f"by the current Gemini Live model. Use cancel_on_interruption=True "
+                        f"(the default), or use a non-realtime LLM service if your tool "
+                        f"needs the async semantics."
+                    )
+                    await self.push_error(
+                        error_msg=(
+                            "cancel_on_interruption=False is not properly supported by "
+                            "the current Gemini Live model."
+                        ),
+                    )
+                    self._async_tool_warning_logged = True
+                    break
+
         # Check for set of completed function calls in the context
         for message in self._context.get_messages():
             # LLMSpecificMessages are opaque provider-specific payloads, not
@@ -1085,6 +1133,27 @@ class GeminiLiveLLMService(LLMService[GeminiLLMAdapter]):
                 logger.debug(f"Setting system instruction: {system_instruction}")
                 config.system_instruction = system_instruction
             if tools:
+                # Tag function declarations registered with
+                # cancel_on_interruption=False as NON_BLOCKING so Gemini
+                # doesn't stall the conversation while the tool runs.
+                # Synchronous (default) tools stay BLOCKING so the model
+                # finishes its turn before the result lands — otherwise
+                # we get the "let me look that up for you" filler the
+                # model produces when it knows the result is async.
+                # https://ai.google.dev/gemini-api/docs/live-api/tools#async-function-calling
+                if self._supports_non_blocking_tools:
+                    for tool in tools:
+                        if not isinstance(tool, dict):
+                            continue
+                        decls = tool.get("function_declarations")
+                        if not isinstance(decls, list):
+                            continue
+                        for decl in decls:
+                            if not isinstance(decl, dict):
+                                continue
+                            name = decl.get("name")
+                            if isinstance(name, str) and self._function_is_async(name):
+                                decl["behavior"] = "NON_BLOCKING"
                 logger.debug(f"Setting tools: {tools}")
                 config.tools = tools
 
@@ -1232,6 +1301,7 @@ class GeminiLiveLLMService(LLMService[GeminiLLMAdapter]):
                 self._session = None
             self._completed_tool_calls = set()
             self._tool_call_id_to_name = {}
+            self._async_tool_warning_logged = False
             self._ready_for_realtime_input = False
             self._disconnecting = False
         except Exception as e:
@@ -1463,9 +1533,22 @@ class GeminiLiveLLMService(LLMService[GeminiLLMAdapter]):
             f"Sending tool result to Gemini Live for tool_call_id={tool_call_id}, tool_result_message={tool_result_message}"
         )
 
+        # Pair the NON_BLOCKING declaration on async tools with a
+        # scheduling hint on the response. WHEN_IDLE lets Gemini finish
+        # whatever it's currently saying before addressing the result, so
+        # we don't cut off mid-sentence when delayed results land. Only
+        # meaningful for NON_BLOCKING tools — synchronous tools never
+        # leave the model mid-turn — so we mirror the gating used at
+        # tool-declaration time.
+        # https://ai.google.dev/gemini-api/docs/live-api/tools#async-function-calling
+        if self._supports_non_blocking_tools and self._function_is_async(tool_name):
+            response_payload = {**tool_result_message, "scheduling": "WHEN_IDLE"}
+        else:
+            response_payload = tool_result_message
+
         # For now we're shoving the name into the tool_call_id field, so this
         # will work until we revisit that.
-        response = FunctionResponse(name=tool_name, id=tool_call_id, response=tool_result_message)
+        response = FunctionResponse(name=tool_name, id=tool_call_id, response=response_payload)
 
         try:
             await self._session.send_tool_response(function_responses=response)
