@@ -751,6 +751,19 @@ class LLMService(UserTurnCompletionLLMServiceMixin, AIService, Generic[TAdapter]
             return True
         return function_name in self._functions.keys()
 
+    def _function_is_async(self, function_name: str) -> bool:
+        """Whether the named function was registered with cancel_on_interruption=False.
+
+        Mirrors the registry-lookup pattern in :meth:`run_function_calls`:
+        a name-specific entry takes precedence; if there isn't one, fall
+        back to the ``None``-keyed catch-all entry. Returns ``False`` if
+        no entry matches.
+        """
+        item = self._functions.get(function_name)
+        if item is None:
+            item = self._functions.get(None)
+        return item is not None and not item.cancel_on_interruption
+
     async def run_function_calls(self, function_calls: Sequence[FunctionCallFromLLM]):
         """Execute a sequence of function calls from the LLM.
 

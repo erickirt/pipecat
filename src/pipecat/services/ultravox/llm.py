@@ -60,6 +60,17 @@ except ModuleNotFoundError as e:
     raise Exception(f"Missing module: {e}")
 
 
+# Placeholder shipped as the client_tool_result for async-registered functions
+# (cancel_on_interruption=False). Sending it immediately unfreezes the
+# conversation so the model can keep talking while the real tool runs; the
+# actual result is injected later as user-side text once the tool finishes.
+_ASYNC_TOOL_PLACEHOLDER_RESULT = (
+    "The actual result for this tool call is not yet ready. A follow-up "
+    "message will arrive shortly with the actual result. In the meantime, "
+    "keep the conversation going naturally."
+)
+
+
 @dataclass
 class UltravoxRealtimeLLMSettings(LLMSettings):
     """Settings for UltravoxRealtimeLLMService.
@@ -219,7 +230,11 @@ class UltravoxRealtimeLLMService(LLMService):
         self._disconnecting = False
         self._bot_responding: Literal[None, "text", "voice"] = None
         self._last_user_id: str | None = None
-        self._async_tool_warning_logged: bool = False
+        self._completed_tool_calls: set[str] = set()
+        # Tracks tool_call_ids for which we've already shipped the
+        # async-tool placeholder client_tool_result that unfreezes the
+        # conversation while the real tool runs. See _handle_tool_invocation.
+        self._started_placeholder_sent: set[str] = set()
 
         self._sample_rate = 48000
         self._resampler = create_stream_resampler()
@@ -375,6 +390,8 @@ class UltravoxRealtimeLLMService(LLMService):
         if self._receive_task:
             await self.cancel_task(self._receive_task, timeout=1.0)
             self._receive_task = None
+        self._completed_tool_calls = set()
+        self._started_placeholder_sent = set()
 
     async def _update_settings(self, delta: Settings):
         changed = await super()._update_settings(delta)
@@ -415,47 +432,79 @@ class UltravoxRealtimeLLMService(LLMService):
             await self.push_frame(frame, direction)
 
     async def _handle_context(self, context: LLMContext):
-        # If the user registered a function with cancel_on_interruption=False,
-        # the aggregator emits async-tool-style messages into the context. We
-        # don't (currently) honor those on Ultravox: the Ultravox API freezes
-        # the conversation during tool execution
-        # (https://docs.ultravox.ai/tools/async-tools#custom-tool-timeouts),
-        # so the "keep talking while the tool runs" intent of the flag is
-        # structurally not achievable here. Surface a one-time warning so
-        # users see they're not getting what they expect.
-        if not self._async_tool_warning_logged:
-            for message in context.get_messages():
-                if isinstance(message, LLMSpecificMessage):
+        # Ultravox handles all context server-side, so the only context we
+        # need to handle here is function-call results.
+        for message in context.get_messages():
+            # LLMSpecificMessages are opaque provider-specific payloads, not
+            # standard tool-result messages — skip them.
+            if isinstance(message, LLMSpecificMessage):
+                continue
+
+            # Async-tool messages live alongside regular tool messages in the
+            # context; detect and route them before the regular logic so we
+            # don't try to send the async-tool envelope JSON as a tool result.
+            async_payload = async_tool_messages.parse_message(message)
+            if async_payload is not None:
+                if async_payload.kind == "started":
+                    # The placeholder client_tool_result that unfreezes the
+                    # conversation was already shipped from
+                    # _handle_tool_invocation when the model issued the
+                    # call. Nothing more to do here.
                     continue
-                if async_tool_messages.parse_message(message) is not None:
+                if async_payload.kind == "intermediate":
                     logger.error(
-                        f"{self}: cancel_on_interruption=False is not supported by "
-                        f"Ultravox: the conversation freezes during tool execution, so "
-                        f"the 'keep talking while the tool runs' intent of the flag "
-                        f"would not be achievable anyway. Use "
-                        f"cancel_on_interruption=True (the default) or a non-realtime "
-                        f"LLM service if your tool needs the async semantics."
+                        f"{self}: Ultravox does not support streamed async "
+                        f"tool results; dropping intermediate result for "
+                        f"tool_call_id={async_payload.tool_call_id}. Use a "
+                        f"non-realtime LLM service if your tool needs to "
+                        f"stream intermediate results."
                     )
                     await self.push_error(
-                        error_msg="cancel_on_interruption=False is not supported by Ultravox.",
+                        error_msg="Ultravox does not support streamed async tool results.",
                     )
-                    self._async_tool_warning_logged = True
-                    break
+                    continue
+                if async_payload.kind == "final":
+                    if async_payload.tool_call_id in self._completed_tool_calls:
+                        continue
+                    # The placeholder client_tool_result has already
+                    # "completed" the tool call from Ultravox's perspective,
+                    # so the actual result is delivered as user-side text.
+                    # Bracketed framing helps the model treat this as a
+                    # tool-result update rather than fresh user input.
+                    await self._send_user_text(
+                        f"[Async tool result for tool_call_id="
+                        f"{async_payload.tool_call_id}] {async_payload.result}"
+                    )
+                    self._completed_tool_calls.add(async_payload.tool_call_id)
+                    continue
+                # Defensive: any async-tool message must not fall through
+                # to the regular tool-result block below, even if it
+                # carries a kind we don't recognize.
+                continue
 
-        # Ultravox handles all context server-side, so the only context we may
-        # need to handle here is new function call results.
-        for message in reversed(context.messages):
-            if message.get("role") != "tool":
-                break
-            content = message.get("content")
-            socket_message = {
+            # Look for newly-completed "regular" (as opposed to async-tool) results
+            if message.get("role") == "tool" and message.get("content") != "IN_PROGRESS":
+                tool_call_id = message.get("tool_call_id")
+                if tool_call_id and tool_call_id not in self._completed_tool_calls:
+                    content = message.get("content")
+                    result = (
+                        content
+                        if isinstance(content, str)
+                        else "".join(t.get("text") for t in content)
+                    )
+                    await self._send_tool_result(tool_call_id, result)
+                    self._completed_tool_calls.add(tool_call_id)
+
+    async def _send_tool_result(self, tool_call_id: str, result: str):
+        """Send a tool call result to Ultravox."""
+        logger.debug(f"Sending tool result to Ultravox for tool_call_id={tool_call_id}")
+        await self._send(
+            {
                 "type": "client_tool_result",
-                "invocationId": message.get("tool_call_id"),
-                "result": content
-                if isinstance(content, str)
-                else "".join(t.get("text") for t in content),
+                "invocationId": tool_call_id,
+                "result": result,
             }
-            await self._send(socket_message)
+        )
 
     async def _handle_vad_user_stopped_speaking(self, frame: VADUserStoppedSpeakingFrame):
         """Handle VAD user stopped speaking frame.
@@ -596,6 +645,19 @@ class UltravoxRealtimeLLMService(LLMService):
     async def _handle_tool_invocation(
         self, tool_name: str, invocation_id: str, parameters: dict[str, Any]
     ):
+        # Ultravox freezes the conversation between client_tool_invocation
+        # and the matching client_tool_result. For functions registered
+        # with cancel_on_interruption=False the actual result won't be
+        # available for some time, so ship a placeholder result now to
+        # unfreeze the conversation. The real result will be injected
+        # later as user-side text from _handle_context.
+        if (
+            self._function_is_async(tool_name)
+            and invocation_id not in self._started_placeholder_sent
+        ):
+            await self._send_tool_result(invocation_id, _ASYNC_TOOL_PLACEHOLDER_RESULT)
+            self._started_placeholder_sent.add(invocation_id)
+
         await self.run_function_calls(
             [
                 FunctionCallFromLLM(
