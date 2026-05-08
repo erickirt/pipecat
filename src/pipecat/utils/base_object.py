@@ -133,11 +133,12 @@ class BaseObject(ABC):
         Returns:
             The created asyncio task.
         """
-        if name:
-            name = f"{self}::{name}"
-        else:
-            name = f"{self}::{coroutine.cr_code.co_name}"
-        return self.task_manager.create_task(coroutine, name)
+        if not name:
+            # Native coroutines expose ``cr_code``; fall back to a generic
+            # name for any other awaitable subtype.
+            cr_code = getattr(coroutine, "cr_code", None)
+            name = getattr(cr_code, "co_name", "task")
+        return self.task_manager.create_task(coroutine, f"{self}::{name}")
 
     async def cancel_task(self, task: asyncio.Task, timeout: float | None = 1.0):
         """Cancel a task managed by this object's task manager.
