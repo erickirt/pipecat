@@ -654,32 +654,32 @@ class PipelineTask(BasePipelineTask):
 
     async def _create_tasks(self):
         """Create and start all pipeline processing tasks."""
-        self._process_push_task = self._task_manager.create_task(
-            self._process_push_queue(), f"{self}::_process_push_queue"
+        self._process_push_task = self.create_task(
+            self._process_push_queue(), "_process_push_queue"
         )
         return self._process_push_task
 
     def _maybe_start_heartbeat_tasks(self):
         """Start heartbeat tasks if heartbeats are enabled and not already running."""
         if self._params.enable_heartbeats and self._heartbeat_push_task is None:
-            self._heartbeat_push_task = self._task_manager.create_task(
-                self._heartbeat_push_handler(), f"{self}::_heartbeat_push_handler"
+            self._heartbeat_push_task = self.create_task(
+                self._heartbeat_push_handler(), "_heartbeat_push_handler"
             )
-            self._heartbeat_monitor_task = self._task_manager.create_task(
-                self._heartbeat_monitor_handler(), f"{self}::_heartbeat_monitor_handler"
+            self._heartbeat_monitor_task = self.create_task(
+                self._heartbeat_monitor_handler(), "_heartbeat_monitor_handler"
             )
 
     def _maybe_start_idle_task(self):
         """Start idle monitoring task if idle timeout is configured."""
         if self._idle_timeout_secs:
-            self._idle_monitor_task = self._task_manager.create_task(
-                self._idle_monitor_handler(), f"{self}::_idle_monitor_handler"
+            self._idle_monitor_task = self.create_task(
+                self._idle_monitor_handler(), "_idle_monitor_handler"
             )
 
     async def _cancel_tasks(self):
         """Cancel all running pipeline tasks."""
         if self._process_push_task:
-            await self._task_manager.cancel_task(self._process_push_task)
+            await self.cancel_task(self._process_push_task)
             self._process_push_task = None
 
         await self._maybe_cancel_heartbeat_tasks()
@@ -691,17 +691,17 @@ class PipelineTask(BasePipelineTask):
             return
 
         if self._heartbeat_push_task:
-            await self._task_manager.cancel_task(self._heartbeat_push_task)
+            await self.cancel_task(self._heartbeat_push_task)
             self._heartbeat_push_task = None
 
         if self._heartbeat_monitor_task:
-            await self._task_manager.cancel_task(self._heartbeat_monitor_task)
+            await self.cancel_task(self._heartbeat_monitor_task)
             self._heartbeat_monitor_task = None
 
     async def _maybe_cancel_idle_task(self):
         """Cancel idle monitoring task if it is running."""
         if self._idle_monitor_task:
-            await self._task_manager.cancel_task(self._idle_monitor_task)
+            await self.cancel_task(self._idle_monitor_task)
             self._idle_monitor_task = None
 
     def _initial_metrics_frame(self) -> MetricsFrame:
