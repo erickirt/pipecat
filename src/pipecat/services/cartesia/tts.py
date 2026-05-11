@@ -304,7 +304,7 @@ class CartesiaTTSService(WebsocketTTSService):
 
         # 1. Initialize default_settings with hardcoded defaults
         default_settings = self.Settings(
-            model="sonic-3",
+            model="sonic-3.5",
             voice=None,
             language=Language.EN,
             generation_config=None,
@@ -801,7 +801,7 @@ class CartesiaHttpTTSService(TTSService):
         """
         # 1. Initialize default_settings with hardcoded defaults
         default_settings = self.Settings(
-            model="sonic-3",
+            model="sonic-3.5",
             voice=None,
             language=Language.EN,
             generation_config=None,
