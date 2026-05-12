@@ -23,7 +23,6 @@ import base64
 import json
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
-from typing import Optional
 
 from loguru import logger
 
@@ -51,10 +50,8 @@ class NvidiaSageMakerWSSTTSettings(STTSettings):
     """Settings for NvidiaSageMakerWebsocketSTTService.
 
     Parameters:
-        language: ISO-639-1 language code passed to NIM (e.g. ``en``).
+        language: ISO-639-1 language code passed to NIM (e.g. ``en-US``).
     """
-
-    language: str = "en-US"
 
 
 class NvidiaSageMakerWebsocketSTTService(STTService):
@@ -89,8 +86,19 @@ class NvidiaSageMakerWebsocketSTTService(STTService):
         ttfs_p99_latency: float | None = 1.5,
         **kwargs,
     ):
+        """Initialize the SageMaker WebSocket STT service.
+
+        Args:
+            endpoint_name: Name of the deployed SageMaker endpoint.
+            region: AWS region where the endpoint lives.
+            sample_rate: Input sample rate in Hz. Defaults to pipeline rate.
+            settings: Runtime-updatable settings (language, model).
+            ttfs_p99_latency: Expected p99 time-to-first-segment latency in seconds.
+            **kwargs: Forwarded to :class:`STTService`.
+        """
         default_settings = self.Settings(
-            model="cache-aware-parakeet-rnnt-en-US-asr-streaming-sortformer"
+            model="cache-aware-parakeet-rnnt-en-US-asr-streaming-sortformer",
+            language="en-US",
         )
 
         if settings is not None:
@@ -109,25 +117,45 @@ class NvidiaSageMakerWebsocketSTTService(STTService):
         self._response_task: asyncio.Task | None = None
 
     def can_generate_metrics(self) -> bool:
+        """Check if this service can generate processing metrics.
+
+        Returns:
+            True, as this service supports metrics generation.
+        """
         return True
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
     async def start(self, frame: StartFrame):
+        """Start the STT service and connect to the SageMaker endpoint.
+
+        Args:
+            frame: The start frame containing initialization parameters.
+        """
         await super().start(frame)
         await self._connect()
 
     async def stop(self, frame: EndFrame):
+        """Stop the STT service and disconnect from the SageMaker endpoint.
+
+        Args:
+            frame: The end frame.
+        """
         await super().stop(frame)
         await self._disconnect()
 
     async def cancel(self, frame: CancelFrame):
+        """Cancel the STT service and disconnect from the SageMaker endpoint.
+
+        Args:
+            frame: The cancel frame.
+        """
         await super().cancel(frame)
         await self._disconnect()
 
     # ── Audio input ───────────────────────────────────────────────────────────
 
-    async def run_stt(self, audio: bytes) -> AsyncGenerator[Frame, None]:
+    async def run_stt(self, audio: bytes) -> AsyncGenerator[Frame | None, None]:
         """Send an audio chunk to NIM; transcription results arrive asynchronously.
 
         Each chunk is appended and immediately committed, matching the NVIDIA
@@ -149,6 +177,12 @@ class NvidiaSageMakerWebsocketSTTService(STTService):
     # ── VAD integration ───────────────────────────────────────────────────────
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
+        """Process frames with VAD-specific handling for metrics lifecycle.
+
+        Args:
+            frame: The frame to process.
+            direction: The direction of frame processing.
+        """
         await super().process_frame(frame, direction)
 
         if isinstance(frame, VADUserStartedSpeakingFrame):
@@ -167,8 +201,8 @@ class NvidiaSageMakerWebsocketSTTService(STTService):
             self._client = SageMakerBidiClient(
                 endpoint_name=self._endpoint_name,
                 region=self._region,
-                model_query_string=None,
-                model_invocation_path=None,
+                model_query_string="",
+                model_invocation_path="",
             )
             await self._client.start_session()
             await self._send_session_config()
@@ -207,6 +241,7 @@ class NvidiaSageMakerWebsocketSTTService(STTService):
             f"{self}: sending session config,"
             f" sample_rate={self.sample_rate} language={self._settings.language}"
         )
+        assert self._client is not None
         await self._client.send_json(
             {
                 "type": "transcription_session.update",
@@ -236,11 +271,11 @@ class NvidiaSageMakerWebsocketSTTService(STTService):
                 result = await self._client.receive_response()
 
                 if result is None or not (
-                    hasattr(result, "value") and hasattr(result.value, "bytes_")
+                    hasattr(result, "value") and hasattr(result.value, "bytes_")  # type: ignore[union-attr]
                 ):
                     continue
 
-                payload = result.value.bytes_
+                payload = result.value.bytes_  # type: ignore[union-attr]
                 if not payload:
                     continue
 

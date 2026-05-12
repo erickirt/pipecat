@@ -12,7 +12,6 @@ import json
 import os
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
-from typing import Optional
 
 import aioboto3
 from loguru import logger
@@ -42,9 +41,6 @@ class NvidiaSageMakerTTSSettings(TTSSettings):
         voice: NIM voice name (e.g. ``Magpie-Multilingual.EN-US.Aria``).
         language: BCP-47 language code passed to NIM (e.g. ``en-US``).
     """
-
-    voice: str = "Magpie-Multilingual.EN-US.Aria"
-    language: str = "en-US"
 
 
 class NvidiaSageMakerHTTPTTSService(TTSService):
@@ -87,7 +83,11 @@ class NvidiaSageMakerHTTPTTSService(TTSService):
             settings: Runtime-updatable settings (voice, language).
             **kwargs: Forwarded to :class:`TTSService`.
         """
-        default_settings = self.Settings(model="magpie")
+        default_settings = self.Settings(
+            model="magpie",
+            voice="Magpie-Multilingual.EN-US.Aria",
+            language="en-US",
+        )
 
         if settings is not None:
             default_settings.apply_update(settings)
@@ -106,11 +106,21 @@ class NvidiaSageMakerHTTPTTSService(TTSService):
         self._client_ctx = None
 
     def can_generate_metrics(self) -> bool:
+        """Check if this service can generate processing metrics.
+
+        Returns:
+            True, as this service supports metrics generation.
+        """
         return True
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
     async def start(self, frame: StartFrame):
+        """Start the TTS service and create the SageMaker client.
+
+        Args:
+            frame: The start frame containing initialization parameters.
+        """
         await super().start(frame)
         session = aioboto3.Session(
             aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
@@ -131,10 +141,20 @@ class NvidiaSageMakerHTTPTTSService(TTSService):
             self._client = None
 
     async def stop(self, frame: EndFrame):
+        """Stop the TTS service and close the SageMaker client.
+
+        Args:
+            frame: The end frame.
+        """
         await super().stop(frame)
         await self._close_client()
 
     async def cancel(self, frame: CancelFrame):
+        """Cancel the TTS service and close the SageMaker client.
+
+        Args:
+            frame: The cancel frame.
+        """
         await super().cancel(frame)
         await self._close_client()
 
@@ -158,6 +178,7 @@ class NvidiaSageMakerHTTPTTSService(TTSService):
             return
 
         try:
+            assert self._client is not None
             body = json.dumps(
                 {
                     "text": text,
@@ -202,9 +223,6 @@ class NvidiaSageMakerWSTTSSettings(TTSSettings):
         language: BCP-47 language code passed to NIM (e.g. ``en-US``).
     """
 
-    voice: str = "Magpie-Multilingual.EN-US.Aria"
-    language: str = "en-US"
-
 
 class NvidiaSageMakerWebsocketTTSService(InterruptibleTTSService):
     """NVIDIA Magpie TTS service using SageMaker bidirectional streaming.
@@ -237,7 +255,20 @@ class NvidiaSageMakerWebsocketTTSService(InterruptibleTTSService):
         settings: NvidiaSageMakerWSTTSSettings | None = None,
         **kwargs,
     ):
-        default_settings = self.Settings(model="magpie")
+        """Initialize the SageMaker WebSocket TTS service.
+
+        Args:
+            endpoint_name: Name of the deployed SageMaker endpoint.
+            region: AWS region where the endpoint lives.
+            sample_rate: Output sample rate in Hz. Defaults to pipeline rate.
+            settings: Runtime-updatable settings (voice, language).
+            **kwargs: Forwarded to :class:`InterruptibleTTSService`.
+        """
+        default_settings = self.Settings(
+            model="magpie",
+            voice="Magpie-Multilingual.EN-US.Aria",
+            language="en-US",
+        )
 
         if settings is not None:
             default_settings.apply_update(settings)
@@ -259,19 +290,39 @@ class NvidiaSageMakerWebsocketTTSService(InterruptibleTTSService):
         self._speech_completed_event = asyncio.Event()
 
     def can_generate_metrics(self) -> bool:
+        """Check if this service can generate processing metrics.
+
+        Returns:
+            True, as this service supports metrics generation.
+        """
         return True
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
     async def start(self, frame: StartFrame):
+        """Start the TTS service and connect to the SageMaker endpoint.
+
+        Args:
+            frame: The start frame containing initialization parameters.
+        """
         await super().start(frame)
         await self._connect()
 
     async def stop(self, frame: EndFrame):
+        """Stop the TTS service and disconnect from the SageMaker endpoint.
+
+        Args:
+            frame: The end frame.
+        """
         await super().stop(frame)
         await self._disconnect()
 
     async def cancel(self, frame: CancelFrame):
+        """Cancel the TTS service and disconnect from the SageMaker endpoint.
+
+        Args:
+            frame: The cancel frame.
+        """
         await super().cancel(frame)
         await self._disconnect()
 
@@ -301,8 +352,8 @@ class NvidiaSageMakerWebsocketTTSService(InterruptibleTTSService):
             self._client = SageMakerBidiClient(
                 endpoint_name=self._endpoint_name,
                 region=self._region,
-                model_query_string=None,
-                model_invocation_path=None,
+                model_query_string="",
+                model_invocation_path="",
             )
             await self._client.start_session()
             await self._send_session_config()
@@ -335,7 +386,7 @@ class NvidiaSageMakerWebsocketTTSService(InterruptibleTTSService):
         return active
 
     async def _handle_interruption(self, frame: InterruptionFrame, direction: FrameDirection):
-        if self._bot_speaking:
+        if self._bot_speaking and self._client:
             logger.debug(
                 f"{self}: interruption detected, sending input_text.done and waiting for speech.completed"
             )
@@ -359,10 +410,10 @@ class NvidiaSageMakerWebsocketTTSService(InterruptibleTTSService):
             if result is None:
                 break
 
-            if not (hasattr(result, "value") and hasattr(result.value, "bytes_")):
+            if not (hasattr(result, "value") and hasattr(result.value, "bytes_")):  # type: ignore[union-attr]
                 continue
 
-            payload = result.value.bytes_
+            payload = result.value.bytes_  # type: ignore[union-attr]
             if not payload:
                 continue
 
@@ -412,6 +463,7 @@ class NvidiaSageMakerWebsocketTTSService(InterruptibleTTSService):
     async def _send_session_config(self):
         """Send synthesize_session.update to configure voice and audio params."""
         logger.debug(f"{self}: sending session config, sample_rate={self.sample_rate}")
+        assert self._client is not None
         await self._client.send_json(
             {
                 "type": "synthesize_session.update",
@@ -430,7 +482,7 @@ class NvidiaSageMakerWebsocketTTSService(InterruptibleTTSService):
     # ── Synthesis ─────────────────────────────────────────────────────────────
 
     @traced_tts
-    async def run_tts(self, text: str, context_id: str) -> AsyncGenerator[Frame, None]:
+    async def run_tts(self, text: str, context_id: str) -> AsyncGenerator[Frame | None, None]:
         """Send text to NIM; audio arrives asynchronously via _receive_messages."""
         logger.debug(f"{self}: Generating TTS [{text}]")
 
@@ -444,6 +496,7 @@ class NvidiaSageMakerWebsocketTTSService(InterruptibleTTSService):
             if not self._client or not self._client.is_active:
                 await self._connect()
 
+            assert self._client is not None
             await self._client.send_json({"type": "input_text.append", "text": text})
             await self._client.send_json({"type": "input_text.commit"})
             yield None

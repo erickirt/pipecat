@@ -4,8 +4,7 @@
 # SPDX-License-Identifier: BSD 2-Clause License
 #
 
-"""Utility for stripping non-speakable characters and markdown formatting from
-text before it is sent to a TTS service.
+"""Utility for stripping non-speakable characters and markdown formatting from text.
 
 Both NvidiaSageMakerHTTPTTSService and NvidiaSageMakerWebsocketTTSService
 use :func:`sanitize_text_for_tts` so the logic lives in one place.
