@@ -82,12 +82,14 @@ class CurrentAudioResponse:
         content_index: Index of the audio content within the item.
         start_time_ms: Timestamp when the audio response started in milliseconds.
         total_size: Total size of audio data received in bytes. Defaults to 0.
+        response_id: ID of the server response the item belongs to. Defaults to "".
     """
 
     item_id: str
     content_index: int
     start_time_ms: int
     total_size: int = 0
+    response_id: str = ""
 
 
 @dataclass
@@ -478,6 +480,18 @@ class OpenAIRealtimeLLMService(LLMService[OpenAIRealtimeLLMAdapter]):
             await self.send_client_event(events.ResponseCreateEvent())
 
     async def _handle_bot_stopped_speaking(self):
+        if self._current_audio_response:
+            current = self._current_audio_response
+            elapsed_ms = int(time.time() * 1000) - current.start_time_ms
+            logger.debug(
+                f"{self} BotStoppedSpeakingFrame received; clearing audio response "
+                f"(item_id={current.item_id} response_id={current.response_id} "
+                f"elapsed_since_first_delta={elapsed_ms}ms)"
+            )
+        else:
+            logger.debug(
+                f"{self} BotStoppedSpeakingFrame received but no current audio response is tracked"
+            )
         self._current_audio_response = None
 
     def _calculate_audio_duration_ms(
@@ -752,20 +766,39 @@ class OpenAIRealtimeLLMService(LLMService[OpenAIRealtimeLLMAdapter]):
         # this event from the server
         await self.stop_ttfb_metrics()
 
-        if self._current_audio_response and self._current_audio_response.item_id != evt.item_id:
-            logger.warning(
-                f"Received a new audio delta for an already completed audio response before receiving the BotStoppedSpeakingFrame."
-            )
-            logger.debug("Forcing previous audio response to None")
-            self._current_audio_response = None
-
         if not self._current_audio_response:
+            # First delta of a new assistant turn.
             self._current_audio_response = CurrentAudioResponse(
                 item_id=evt.item_id,
                 content_index=evt.content_index,
                 start_time_ms=int(time.time() * 1000),
+                response_id=evt.response_id,
+            )
+            logger.debug(
+                f"{self} first audio delta for item_id={evt.item_id} "
+                f"response_id={evt.response_id} output_index={evt.output_index} "
+                f"content_index={evt.content_index}"
             )
             await self.push_frame(TTSStartedFrame())
+        elif self._current_audio_response.item_id != evt.item_id:
+            # A response can contain multiple output items (observed with
+            # gpt-realtime-2 on long replies). Deltas arrive in playback order
+            # across items, so we treat them as one continuous TTS turn:
+            # advance the tracked item in place without emitting another
+            # TTSStartedFrame. Reset total_size so truncation math reflects the
+            # current item only (last-item-wins, matching openai-agents-python).
+            logger.debug(
+                f"{self} advancing to next output item "
+                f"(prev item_id={self._current_audio_response.item_id} -> "
+                f"new item_id={evt.item_id} response_id={evt.response_id} "
+                f"output_index={evt.output_index} content_index={evt.content_index})"
+            )
+            self._current_audio_response.item_id = evt.item_id
+            self._current_audio_response.content_index = evt.content_index
+            self._current_audio_response.response_id = evt.response_id
+            self._current_audio_response.start_time_ms = int(time.time() * 1000)
+            self._current_audio_response.total_size = 0
+
         audio = base64.b64decode(evt.delta)
         self._current_audio_response.total_size += len(audio)
         frame = TTSAudioRawFrame(
@@ -776,10 +809,14 @@ class OpenAIRealtimeLLMService(LLMService[OpenAIRealtimeLLMAdapter]):
         await self.push_frame(frame)
 
     async def _handle_evt_audio_done(self, evt):
-        if self._current_audio_response:
-            await self.push_frame(TTSStoppedFrame())
-            # Don't clear the self._current_audio_response here. We need to wait until we
-            # receive a BotStoppedSpeakingFrame from the output transport.
+        # Debug-trace only; TTSStoppedFrame is emitted on response.done so that
+        # multi-output-item responses still produce exactly one bracketing
+        # Started/Stopped pair (see _handle_evt_response_done).
+        logger.debug(
+            f"{self} audio.done for item_id={evt.item_id} "
+            f"response_id={evt.response_id} output_index={evt.output_index} "
+            f"content_index={evt.content_index}"
+        )
 
     async def _handle_evt_conversation_item_added(self, evt):
         """Handle conversation.item.added event - item is added but may still be processing."""
@@ -863,6 +900,17 @@ class OpenAIRealtimeLLMService(LLMService[OpenAIRealtimeLLMAdapter]):
         )
         await self.start_llm_usage_metrics(tokens)
         await self.stop_processing_metrics()
+        # Push TTSStoppedFrame here (rather than on each per-item
+        # response.output_audio.done) so that a response containing multiple
+        # output items still emits exactly one bracketing TTSStartedFrame /
+        # TTSStoppedFrame pair around the audio. In practice gpt-realtime-2's
+        # audio.done events arrive batched within a few milliseconds of
+        # response.done, so this is effectively coincident with end-of-audio.
+        # The strictly-sequential variant (audio.done A before item B begins)
+        # is theoretical — we haven't observed it — but this placement handles
+        # it too: per-item gating would otherwise emit Stopped/Started/Stopped.
+        if self._current_audio_response is not None:
+            await self.push_frame(TTSStoppedFrame())
         await self.push_frame(LLMFullResponseEndFrame())
         self._current_assistant_response = None
         # error handling
