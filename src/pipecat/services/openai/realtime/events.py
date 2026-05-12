@@ -164,6 +164,19 @@ class AudioConfiguration(BaseModel):
     output: AudioOutput | None = None
 
 
+class Reasoning(BaseModel):
+    """Reasoning configuration for reasoning-capable Realtime models (e.g. ``gpt-realtime-2``).
+
+    Parameters:
+        effort: How much reasoning effort the model should apply. ``None``
+            (the default) leaves the field unset and lets the server pick.
+    """
+
+    # ``| str`` for forward compatibility: if OpenAI adds new effort levels,
+    # users can pass the new string without waiting for a Pipecat release.
+    effort: Literal["minimal", "low", "medium", "high", "xhigh"] | str | None = None
+
+
 class SessionProperties(BaseModel):
     """Configuration properties for an OpenAI Realtime session.
 
@@ -184,6 +197,8 @@ class SessionProperties(BaseModel):
         prompt: Reference to a prompt template and its variables.
         expires_at: Session expiration timestamp.
         include: Additional fields to include in server outputs.
+        reasoning: Reasoning configuration. Only supported by reasoning-capable
+            Realtime models such as ``gpt-realtime-2``.
     """
 
     # Needed to support ToolSchema in tools field.
@@ -206,6 +221,7 @@ class SessionProperties(BaseModel):
     prompt: dict | None = None
     expires_at: int | None = None
     include: list[str] | None = None
+    reasoning: Reasoning | None = None
 
 
 #

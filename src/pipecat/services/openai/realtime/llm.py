@@ -321,6 +321,10 @@ class OpenAIRealtimeLLMService(LLMService[OpenAIRealtimeLLMAdapter]):
         self._messages_added_manually = {}
         self._pending_function_calls = {}  # Track function calls by call_id
         self._completed_tool_calls = set()
+        # Whether we've already emitted the "stripping `reasoning`" warning
+        # for this service instance. The Realtime API doesn't allow swapping
+        # the model mid-session, so once is enough.
+        self._reasoning_strip_warned = False
 
         self._register_event_handler("on_conversation_item_created")
         self._register_event_handler("on_conversation_item_updated")
@@ -658,6 +662,32 @@ class OpenAIRealtimeLLMService(LLMService[OpenAIRealtimeLLMAdapter]):
         self._warn_unhandled_updated_settings(changed.keys() - handled)
         return changed
 
+    # Substrings used to recognize reasoning-capable Realtime models. Substring
+    # match (rather than exact equality) so date-versioned variants of the same
+    # base model also match without code changes. Extend this tuple as OpenAI
+    # ships more reasoning-capable Realtime models.
+    _REASONING_CAPABLE_MODEL_SUBSTRINGS = ("gpt-realtime-2",)
+
+    def _strip_unsupported_reasoning(
+        self, settings: events.SessionProperties
+    ) -> events.SessionProperties:
+        """Drop ``reasoning`` from an outgoing session.update if the model can't use it.
+
+        The server otherwise rejects the whole update and kills the session.
+        Returns a copy when stripping; the user's stored config is preserved.
+        """
+        if settings.reasoning is None or not settings.model:
+            return settings
+        if any(s in settings.model for s in self._REASONING_CAPABLE_MODEL_SUBSTRINGS):
+            return settings
+        if not self._reasoning_strip_warned:
+            logger.warning(
+                f"{self} stripping `reasoning` from session.update: model={settings.model!r} "
+                f"isn't a known reasoning-capable Realtime model."
+            )
+            self._reasoning_strip_warned = True
+        return settings.model_copy(update={"reasoning": None})
+
     async def _send_session_update(self):
         settings = assert_given(self._settings.session_properties)
         adapter = self.get_llm_adapter()
@@ -683,7 +713,9 @@ class OpenAIRealtimeLLMService(LLMService[OpenAIRealtimeLLMAdapter]):
         if settings.tools and isinstance(settings.tools, ToolsSchema):
             settings.tools = adapter.from_standard_tools(settings.tools)
 
-        await self.send_client_event(events.SessionUpdateEvent(session=settings))
+        outgoing = self._strip_unsupported_reasoning(settings)
+
+        await self.send_client_event(events.SessionUpdateEvent(session=outgoing))
 
     #
     # inbound server event handling
