@@ -466,6 +466,29 @@ def traced_stt(func: Callable | None = None, *, name: str | None = None) -> Call
             if getattr(original_push_frame, "__stt_tracing_push_frame_wrapped__", False):
                 return
 
+            def update_transcript(state, new_text):
+                """Append or extend the current segment in ``state['segments']``.
+
+                If ``new_text`` starts with the last recorded segment,
+                treat it as a continuation (interim accumulation) and
+                replace the last segment. Otherwise treat it as a new
+                segment and append. Some STT services (Deepgram with
+                utterance_end_ms enabled, for example) emit several
+                ``TranscriptionFrame``s per turn where each carries a
+                different segment rather than a cumulative update —
+                without this logic the span's transcript would only
+                show the last segment and the beginning would be lost.
+                """
+                if not new_text:
+                    return
+                segments = state["segments"]
+                if not segments:
+                    segments.append(new_text)
+                elif new_text.startswith(segments[-1]):
+                    segments[-1] = new_text
+                else:
+                    segments.append(new_text)
+
             def open_span(service, state):
                 """Open the STT span, anchored at ``segment_start_time`` if set."""
                 parent = _get_turn_context(service) or _get_parent_service_context(service)
@@ -488,18 +511,24 @@ def traced_stt(func: Callable | None = None, *, name: str | None = None) -> Call
                 state["span"] = span
 
             def handle_pre_push(service, frame, state):
-                """Record speech-start anchor.
+                """Record speech-start anchor; lazy-open span on first transcript.
 
-                The span itself is lazy-opened in ``handle_post_push``
-                when the first ``TranscriptionFrame`` arrives. Opening
-                on ``VADUserStartedSpeakingFrame`` or
-                ``UserStartedSpeakingFrame`` would race with
+                Lazy-opening on ``TranscriptionFrame`` (rather than on
+                ``VADUserStartedSpeakingFrame`` or
+                ``UserStartedSpeakingFrame``) avoids racing with
                 ``TurnTraceObserver._handle_turn_started``, which runs
                 in a background task fired by ``_call_event_handler``
                 (``base_object.py:232``) and may not have set the new
                 turn's context yet — that produces STT spans parented
-                to the previous turn. By the time STT actually emits a
-                transcript, the turn observer has run.
+                to the previous turn. By the time STT actually emits
+                a transcript, the turn observer has run.
+
+                Opening happens in pre-push (rather than post-push) so
+                that the recursive ``push_frame`` that
+                ``STTService.push_frame`` triggers for the
+                ``MetricsFrame`` (via ``stop_ttfb_metrics`` at
+                ``stt_service.py:465``) sees the span already open and
+                can attribute ``metrics.ttfb`` to it.
                 """
                 if isinstance(frame, VADUserStartedSpeakingFrame):
                     # Anchor the next span at the moment speech began.
@@ -507,52 +536,91 @@ def traced_stt(func: Callable | None = None, *, name: str | None = None) -> Call
                     # re-trigger) or a span open.
                     if state["span"] is None and state["segment_start_time"] is None:
                         state["segment_start_time"] = frame.timestamp - frame.start_secs
+                elif isinstance(frame, TranscriptionFrame) and state["span"] is None:
+                    open_span(service, state)
 
-            def handle_post_push(service, frame, state):
-                """Lazy-open span on first transcript; attach attrs; close on finalized.
+            async def handle_post_push(service, frame, state):
+                """Attach per-frame attrs; close on finalized; record TTFB from MetricsFrame.
+
+                ``metrics.ttfb`` is read off the ``TTFBMetricsData``
+                payload of any ``MetricsFrame`` pushed by
+                ``stop_ttfb_metrics`` — the canonical value the rest
+                of the system uses — rather than from
+                ``_metrics.ttfb``, which has an in-progress fallback
+                branch (``frame_processor_metrics.py:48-62``) that
+                would return an under-estimate if read at the wrong
+                time.
 
                 One STT span per finalized transcript: the span opens
-                on the first ``TranscriptionFrame`` (anchored at
-                speech start via ``segment_start_time``) and closes on
-                ``finalized=True``. Multiple finalized transcripts in
-                a single turn produce multiple spans; subsequent
-                spans lazy-open with no explicit anchor (start_time
-                defaults to "now"). Spans that never see a finalized
-                transcript are closed by ``UserStoppedSpeakingFrame``
-                (marked ``stt.incomplete``) or by the TTFB timeout
-                (marked ``stt.timed_out``).
+                lazily on the first ``TranscriptionFrame`` (pre-push,
+                anchored at speech start via ``segment_start_time``)
+                and closes on ``finalized=True``. Multiple finalized
+                transcripts in a single turn produce multiple spans.
+
+                For services that never set ``frame.finalized=True``
+                (e.g. Deepgram, which only marks it via
+                ``confirm_finalize()``), the span closes on
+                ``UserStoppedSpeakingFrame``. To capture
+                ``metrics.ttfb`` for those spans we force-stop any
+                pending TTFB measurement before closing — that pushes
+                a ``MetricsFrame``, our post-push attributes the
+                value, and ``patched_stop_ttfb_metrics`` closes the
+                span. The ``stt.incomplete=true`` flag is only set if
+                neither a finalized transcript nor a TTFB measurement
+                ever finalized for the span.
                 """
                 if isinstance(frame, UserStoppedSpeakingFrame):
                     prev_span = state["span"]
-                    if prev_span is not None:
-                        prev_span.set_attribute("stt.incomplete", True)
-                        prev_span.end()
+                    if prev_span is None:
+                        return
+                    metrics = getattr(service, "_metrics", None)
+                    if metrics is not None and getattr(metrics, "_start_ttfb_time", 0) > 0:
+                        last_transcript_time = getattr(service, "_last_transcript_time", 0) or None
+                        try:
+                            await service.stop_ttfb_metrics(end_time=last_transcript_time)
+                        except Exception as e:
+                            logging.warning(f"Error force-stopping STT TTFB on user turn end: {e}")
+                    # patched_stop_ttfb_metrics may have closed the span
+                    # via the timeout path; re-check.
+                    if state["span"] is None:
+                        state["segments"] = []
+                        return
+                    state["span"].set_attribute("stt.incomplete", True)
+                    state["span"].end()
                     state["span"] = None
                     state["segment_start_time"] = None
-                elif isinstance(frame, TranscriptionFrame):
-                    if state["span"] is None:
-                        open_span(service, state)
+                    state["segments"] = []
+                elif isinstance(frame, MetricsFrame):
                     span = state["span"]
+                    if span is None:
+                        return
+                    for data in frame.data:
+                        if isinstance(data, TTFBMetricsData):
+                            span.set_attribute("metrics.ttfb", data.value)
+                            break
+                elif isinstance(frame, TranscriptionFrame):
+                    span = state["span"]
+                    if span is None:
+                        return
                     if frame.text:
-                        span.set_attribute("transcript", frame.text)
+                        update_transcript(state, frame.text)
+                        span.set_attribute("transcript", " ".join(state["segments"]).strip())
                     span.set_attribute("is_final", bool(frame.finalized))
                     if frame.language:
                         span.set_attribute("language", str(frame.language))
                     if frame.user_id:
                         span.set_attribute("user_id", frame.user_id)
                     if frame.finalized:
-                        ttfb = getattr(getattr(service, "_metrics", None), "ttfb", None)
-                        if ttfb is not None:
-                            span.set_attribute("metrics.ttfb", ttfb)
                         span.end()
                         state["span"] = None
                         state["segment_start_time"] = None
+                        state["segments"] = []
 
             @functools.wraps(original_push_frame)
             async def patched_push_frame(self, frame, direction=FrameDirection.DOWNSTREAM):
                 state = getattr(self, "_stt_span_state", None)
                 if state is None:
-                    state = {"span": None, "segment_start_time": None}
+                    state = {"span": None, "segment_start_time": None, "segments": []}
                     self._stt_span_state = state
 
                 if getattr(self, "_tracing_enabled", False):
@@ -565,7 +633,7 @@ def traced_stt(func: Callable | None = None, *, name: str | None = None) -> Call
 
                 if getattr(self, "_tracing_enabled", False):
                     try:
-                        handle_post_push(self, frame, state)
+                        await handle_post_push(self, frame, state)
                     except Exception as e:
                         logging.warning(f"Error in STT post-push tracing: {e}")
 
@@ -573,18 +641,22 @@ def traced_stt(func: Callable | None = None, *, name: str | None = None) -> Call
             owner.push_frame = patched_push_frame
 
         def patch_stop_ttfb_metrics(owner):
-            """Wrap ``owner.stop_ttfb_metrics`` to handle the TTFB-timeout path.
+            """Wrap ``owner.stop_ttfb_metrics`` to close the span on the timeout path.
 
             When ``stop_ttfb_metrics`` is invoked with ``end_time`` set,
-            that signals the STT service's TTFB-timeout handler firing
-            without a finalized ``TranscriptionFrame`` ever arriving
-            (`stt_service.py:566`). In that case we attach
-            ``metrics.ttfb`` and close the span with
-            ``stt.timed_out=true``. The default ``end_time=None`` path
-            (called from ``push_frame`` on finalized frames) only
-            attaches ``metrics.ttfb``; closing happens in the
-            ``push_frame`` post-hook so the final transcript attributes
-            land first.
+            that signals the TTFB-timeout handler firing
+            (`stt_service.py:566`), or our own force-stop from the
+            ``UserStoppedSpeakingFrame`` handler. In either case we
+            anchor the span's end at ``end_time``
+            (= ``_last_transcript_time``) rather than at whenever the
+            coroutine resumed.
+
+            ``metrics.ttfb`` attribution is not done here — the
+            ``MetricsFrame`` that ``stop_ttfb_metrics`` pushes flows
+            through ``push_frame`` and gets recorded by
+            ``handle_post_push``, which reads the canonical
+            ``TTFBMetricsData.value`` rather than the in-progress
+            ``_metrics.ttfb`` property.
             """
             original_stop = owner.stop_ttfb_metrics
             if getattr(original_stop, "__stt_tracing_stop_ttfb_wrapped__", False):
@@ -593,25 +665,19 @@ def traced_stt(func: Callable | None = None, *, name: str | None = None) -> Call
             @functools.wraps(original_stop)
             async def patched_stop(self, *, end_time=None):
                 await original_stop(self, end_time=end_time)
+                if end_time is None:
+                    return
                 if not getattr(self, "_tracing_enabled", False):
                     return
                 state = getattr(self, "_stt_span_state", None)
                 if not state or state["span"] is None:
                     return
-                span = state["span"]
                 try:
-                    ttfb = getattr(getattr(self, "_metrics", None), "ttfb", None)
-                    if ttfb is not None:
-                        span.set_attribute("metrics.ttfb", ttfb)
-                    if end_time is not None:
-                        span.set_attribute("stt.timed_out", True)
-                        # Use end_time (= _last_transcript_time) so the
-                        # span ends where the timeout handler actually
-                        # finalized TTFB, rather than after the timeout
-                        # sleep.
-                        span.end(end_time=int(end_time * 1e9))
-                        state["span"] = None
-                        state["segment_start_time"] = None
+                    span = state["span"]
+                    span.end(end_time=int(end_time * 1e9))
+                    state["span"] = None
+                    state["segment_start_time"] = None
+                    state["segments"] = []
                 except Exception as e:
                     logging.warning(f"Error in STT stop_ttfb_metrics tracing: {e}")
 
