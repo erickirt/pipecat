@@ -352,8 +352,8 @@ class NvidiaSageMakerWebsocketTTSService(InterruptibleTTSService):
             self._client = SageMakerBidiClient(
                 endpoint_name=self._endpoint_name,
                 region=self._region,
-                model_query_string="",
-                model_invocation_path="",
+                model_query_string=None,
+                model_invocation_path=None,
             )
             await self._client.start_session()
             await self._send_session_config()
