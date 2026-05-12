@@ -11,7 +11,6 @@ rich information about service execution including configuration,
 parameters, and performance metrics.
 """
 
-import contextlib
 import functools
 import inspect
 import json
@@ -24,6 +23,8 @@ if TYPE_CHECKING:
     from opentelemetry import context as context_api
     from opentelemetry import trace
 
+from pipecat.frames.frames import MetricsFrame, TTSStoppedFrame
+from pipecat.metrics.metrics import TTFBMetricsData
 from pipecat.processors.aggregators.llm_context import NOT_GIVEN
 from pipecat.utils.tracing.service_attributes import (
     add_gemini_live_span_attributes,
@@ -175,6 +176,13 @@ def traced_tts(func: Callable | None = None, *, name: str | None = None) -> Call
     - Character count and text content
     - Performance metrics like TTFB
 
+    The span is scoped to the full synthesis operation, from
+    ``create_audio_context`` until ``TTSStoppedFrame`` (or
+    ``remove_audio_context`` as a safety net), so TTFB and any other
+    runtime-computed metrics land on the correct span even when audio
+    chunks are delivered after ``run_tts`` returns (e.g. WebSocket
+    streaming TTS services).
+
     Works with both async functions and generators.
 
     Args:
@@ -190,99 +198,217 @@ def traced_tts(func: Callable | None = None, *, name: str | None = None) -> Call
     def decorator(f):
         is_async_generator = inspect.isasyncgenfunction(f)
 
-        @contextlib.asynccontextmanager
-        async def tracing_context(self, text):
-            """Async context manager for TTS tracing.
+        def end_tts_span(service, context_id, *, interrupted=False):
+            """End the TTS span for ``context_id`` if still open. Idempotent."""
+            entry = service._tts_spans.pop(context_id, None)
+            if not entry:
+                return
+            try:
+                span = entry["span"]
+                if interrupted:
+                    span.set_attribute("tts.interrupted", True)
+                span.end()
+            except Exception as e:
+                logging.warning(f"Error closing TTS span: {e}")
 
-            Args:
-                self: The TTS service instance.
-                text: The text being synthesized.
+        def install_audio_context_patches(service):
+            """Install per-instance wrappers on the audio-context methods.
 
-            Yields:
-                The active span for the TTS operation.
+            The wrappers own the lifetime of the TTS span:
+
+            - ``create_audio_context``: opens the span and records
+              baseline attributes.
+            - ``append_to_audio_context``: ends the span on
+              ``TTSStoppedFrame``.
+            - ``push_frame``: records ``metrics.ttfb`` from the
+              canonical ``TTFBMetricsData`` payload of any
+              ``MetricsFrame`` pushed by ``stop_ttfb_metrics``. Reading
+              the value from the metrics event (instead of polling
+              ``_metrics.ttfb`` when the first audio is queued) avoids
+              the ``ttfb`` property's in-progress fallback, which would
+              otherwise report an under-estimate whenever a context's
+              audio waits behind earlier queued audio before
+              ``_handle_audio_context`` actually stops the TTFB
+              measurement.
+            - ``remove_audio_context``: ends any still-open span as a
+              safety net for error and cancellation paths.
+            - ``on_audio_context_completed``: ends the span on natural
+              completion. Needed because services that rely on the
+              base class to auto-push ``TTSStoppedFrame`` (via
+              ``push_frame`` in ``_handle_audio_context``) bypass the
+              ``append_to_audio_context`` hook entirely.
+            - ``reset_active_audio_context``: ends the currently
+              playing context's span if still open. Always called from
+              ``_handle_interruption``, so this is the interruption
+              hook.
+
+            The patches check ``_tracing_enabled`` at invocation time,
+            so they are safe to install regardless of whether tracing
+            is enabled.
             """
-            # Check if tracing is enabled for this service instance
-            if not getattr(self, "_tracing_enabled", False):
-                yield None
+            if getattr(service, "__tts_tracing_patches_installed__", False):
+                return
+            service.__tts_tracing_patches_installed__ = True
+            service._tts_spans = {}
+
+            orig_create = service.create_audio_context
+            orig_append = service.append_to_audio_context
+            orig_remove = service.remove_audio_context
+            orig_completed = service.on_audio_context_completed
+            orig_reset_active = service.reset_active_audio_context
+            orig_push_frame = service.push_frame
+
+            async def traced_create_audio_context(context_id):
+                if getattr(service, "_tracing_enabled", False):
+                    try:
+                        parent = _get_turn_context(service) or _get_parent_service_context(service)
+                        tracer = trace.get_tracer("pipecat")
+                        span = tracer.start_span("tts", context=parent)
+                        service._tts_spans[context_id] = {"span": span, "ttfb_recorded": False}
+
+                        settings = getattr(service, "_settings", None)
+                        add_tts_span_attributes(
+                            span=span,
+                            service_name=service.__class__.__name__,
+                            model=_get_model_name(service),
+                            voice_id=getattr(settings, "voice", "unknown"),
+                            settings=settings,
+                            operation_name="tts",
+                        )
+                    except Exception as e:
+                        logging.warning(f"Error opening TTS span: {e}")
+                return await orig_create(context_id)
+
+            async def traced_append_to_audio_context(context_id, frame):
+                entry = service._tts_spans.get(context_id)
+                if entry and frame is not None:
+                    try:
+                        if isinstance(frame, TTSStoppedFrame):
+                            entry["span"].end()
+                            service._tts_spans.pop(context_id, None)
+                    except Exception as e:
+                        logging.warning(f"Error updating TTS span: {e}")
+                return await orig_append(context_id, frame)
+
+            async def traced_push_frame(frame, direction=FrameDirection.DOWNSTREAM):
+                await orig_push_frame(frame, direction)
+                if not getattr(service, "_tracing_enabled", False):
+                    return
+                if not isinstance(frame, MetricsFrame):
+                    return
+                try:
+                    playing_id = getattr(service, "_playing_context_id", None)
+                    if playing_id is None:
+                        return
+                    entry = service._tts_spans.get(playing_id)
+                    if not entry or entry["ttfb_recorded"]:
+                        return
+                    for data in frame.data:
+                        if isinstance(data, TTFBMetricsData):
+                            entry["span"].set_attribute("metrics.ttfb", data.value)
+                            entry["ttfb_recorded"] = True
+                            break
+                except Exception as e:
+                    logging.warning(f"Error recording TTS ttfb from MetricsFrame: {e}")
+
+            async def traced_remove_audio_context(context_id):
+                entry = service._tts_spans.pop(context_id, None)
+                if entry:
+                    try:
+                        entry["span"].end()
+                    except Exception as e:
+                        logging.warning(f"Error closing TTS span: {e}")
+                return await orig_remove(context_id)
+
+            async def traced_on_audio_context_completed(context_id):
+                end_tts_span(service, context_id)
+                return await orig_completed(context_id)
+
+            def traced_reset_active_audio_context():
+                playing_id = getattr(service, "_playing_context_id", None)
+                if playing_id is not None:
+                    end_tts_span(service, playing_id, interrupted=True)
+                return orig_reset_active()
+
+            service.create_audio_context = traced_create_audio_context
+            service.append_to_audio_context = traced_append_to_audio_context
+            service.push_frame = traced_push_frame
+            service.remove_audio_context = traced_remove_audio_context
+            service.on_audio_context_completed = traced_on_audio_context_completed
+            service.reset_active_audio_context = traced_reset_active_audio_context
+
+        def patch_setup(owner):
+            """Wrap ``owner.setup`` so audio-context patches install per-instance.
+
+            Idempotent: if a parent class has already been wrapped,
+            skip. The patches check ``_tracing_enabled`` at invocation
+            time, so wrapping is always safe.
+            """
+            original_setup = owner.setup
+            if getattr(original_setup, "__tts_tracing_setup_wrapped__", False):
                 return
 
-            service_class_name = self.__class__.__name__
-            span_name = "tts"
+            @functools.wraps(original_setup)
+            async def patched_setup(self, setup):
+                await original_setup(self, setup)
+                install_audio_context_patches(self)
 
-            # Get parent context
-            parent_context = _get_turn_context(self) or _get_parent_service_context(self)
+            patched_setup.__tts_tracing_setup_wrapped__ = True
+            owner.setup = patched_setup
 
-            # Create span
-            tracer = trace.get_tracer("pipecat")
-            with tracer.start_as_current_span(span_name, context=parent_context) as span:
-                try:
-                    settings = getattr(self, "_settings", None)
-                    add_tts_span_attributes(
-                        span=span,
-                        service_name=service_class_name,
-                        model=_get_model_name(self),
-                        voice_id=getattr(settings, "voice", "unknown"),
-                        text=text,
-                        settings=settings,
-                        character_count=len(text),
-                        operation_name="tts",
-                        cartesia_version=getattr(self, "_cartesia_version", None),
-                        context_id=getattr(self, "_context_id", None),
-                    )
+        def attach_run_tts_attributes(service, text, args, kwargs):
+            """Attach text-specific attributes to the in-flight TTS span."""
+            if not getattr(service, "_tracing_enabled", False):
+                return
+            try:
+                context_id = args[0] if args else kwargs.get("context_id")
+                entry = getattr(service, "_tts_spans", {}).get(context_id)
+                if entry and text:
+                    span = entry["span"]
+                    span.set_attribute("text", text)
+                    span.set_attribute("metrics.character_count", len(text))
+            except Exception as e:
+                logging.warning(f"Error attaching TTS text to span: {e}")
 
-                    yield span
+        def make_run_tts_wrapper():
+            """Build the wrapper around ``run_tts`` that adds per-call attributes.
 
-                except Exception as e:
-                    logging.warning(f"Error in TTS tracing: {e}")
-                    raise
-                finally:
-                    # Update TTFB metric at the end
-                    ttfb: float | None = getattr(getattr(self, "_metrics", None), "ttfb", None)
-                    if ttfb is not None:
-                        span.set_attribute("metrics.ttfb", ttfb)
+            Span lifetime is owned by the audio-context patches. This
+            wrapper only attaches the text and character count to the
+            span that was opened by ``create_audio_context`` just
+            before ``run_tts`` was invoked.
+            """
+            if is_async_generator:
 
-        if is_async_generator:
-
-            @functools.wraps(f)
-            async def gen_wrapper(self, text, *args, **kwargs):
-                if not getattr(self, "_tracing_enabled", False):
-                    async for item in f(self, text, *args, **kwargs):
-                        yield item
-                    return
-
-                fn_called = False
-                try:
-                    async with tracing_context(self, text):
-                        fn_called = True
-                        async for item in f(self, text, *args, **kwargs):
-                            yield item
-                except Exception as e:
-                    if fn_called:
-                        raise
-                    logging.error(f"Error in TTS tracing (continuing without tracing): {e}")
+                @functools.wraps(f)
+                async def gen_wrapper(self, text, *args, **kwargs):
+                    attach_run_tts_attributes(self, text, args, kwargs)
                     async for item in f(self, text, *args, **kwargs):
                         yield item
 
-            return gen_wrapper
-        else:
+                return gen_wrapper
 
             @functools.wraps(f)
-            async def wrapper(self, text, *args, **kwargs):
-                if not getattr(self, "_tracing_enabled", False):
-                    return await f(self, text, *args, **kwargs)
+            async def coro_wrapper(self, text, *args, **kwargs):
+                attach_run_tts_attributes(self, text, args, kwargs)
+                return await f(self, text, *args, **kwargs)
 
-                fn_called = False
-                try:
-                    async with tracing_context(self, text):
-                        fn_called = True
-                        return await f(self, text, *args, **kwargs)
-                except Exception as e:
-                    if fn_called:
-                        raise
-                    logging.error(f"Error in TTS tracing (continuing without tracing): {e}")
-                    return await f(self, text, *args, **kwargs)
+            return coro_wrapper
 
-            return wrapper
+        class _TracedTTSDescriptor:
+            """Class-level descriptor that wires up TTS tracing at class definition time.
+
+            ``__set_name__`` fires when the class body finishes evaluating,
+            giving us a chance to wrap the owner's ``setup()`` so that the
+            audio-context patches install on every instance before any
+            ``create_audio_context`` call (including the very first one).
+            """
+
+            def __set_name__(self, owner, attr_name):
+                patch_setup(owner)
+                setattr(owner, attr_name, make_run_tts_wrapper())
+
+        return _TracedTTSDescriptor()
 
     if func is not None:
         return decorator(func)
