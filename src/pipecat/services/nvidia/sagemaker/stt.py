@@ -46,15 +46,15 @@ from pipecat.utils.tracing.service_decorators import traced_stt
 
 
 @dataclass
-class NvidiaSageMakerWSSTTSettings(STTSettings):
-    """Settings for NvidiaSageMakerWebsocketSTTService.
+class NvidiaSageMakerSTTSettings(STTSettings):
+    """Settings for NvidiaSageMakerSTTService.
 
     Parameters:
         language: ISO-639-1 language code passed to NIM (e.g. ``en-US``).
     """
 
 
-class NvidiaSageMakerWebsocketSTTService(STTService):
+class NvidiaSageMakerSTTService(STTService):
     """NVIDIA Nemotron ASR STT service using SageMaker bidirectional streaming.
 
     Maintains a persistent HTTP/2 bidi-stream session to the SageMaker endpoint
@@ -65,16 +65,16 @@ class NvidiaSageMakerWebsocketSTTService(STTService):
 
     Example::
 
-        stt = NvidiaSageMakerWebsocketSTTService(
+        stt = NvidiaSageMakerSTTService(
             endpoint_name=os.getenv("SAGEMAKER_ASR_ENDPOINT_NAME"),
             region=os.getenv("AWS_REGION", "us-west-2"),
-            settings=NvidiaSageMakerWebsocketSTTService.Settings(
+            settings=NvidiaSageMakerSTTService.Settings(
                 language="en-US",
             ),
         )
     """
 
-    Settings = NvidiaSageMakerWSSTTSettings
+    Settings = NvidiaSageMakerSTTSettings
 
     def __init__(
         self,
@@ -82,7 +82,7 @@ class NvidiaSageMakerWebsocketSTTService(STTService):
         endpoint_name: str,
         region: str = "us-west-2",
         sample_rate: int | None = None,
-        settings: NvidiaSageMakerWSSTTSettings | None = None,
+        settings: NvidiaSageMakerSTTSettings | None = None,
         ttfs_p99_latency: float | None = 1.5,
         **kwargs,
     ):
@@ -301,6 +301,8 @@ class NvidiaSageMakerWebsocketSTTService(STTService):
                                 delta,
                                 self._user_id,
                                 time_now_iso8601(),
+                                language=self._settings.language,
+                                result=msg,
                             )
                         )
 
@@ -313,7 +315,9 @@ class NvidiaSageMakerWebsocketSTTService(STTService):
                                 transcript,
                                 self._user_id,
                                 time_now_iso8601(),
+                                language=self._settings.language,
                                 result=msg,
+                                finalized=True,
                             )
                         )
                         await self._handle_transcription(transcript, True)

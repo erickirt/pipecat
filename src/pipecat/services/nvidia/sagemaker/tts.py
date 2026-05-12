@@ -35,7 +35,7 @@ from pipecat.utils.tracing.service_decorators import traced_tts
 
 @dataclass
 class NvidiaSageMakerTTSSettings(TTSSettings):
-    """Settings for NvidiaSageMakerHTTPTTSService.
+    """Settings for NVIDIA SageMaker TTS services.
 
     Parameters:
         voice: NIM voice name (e.g. ``Magpie-Multilingual.EN-US.Aria``).
@@ -79,7 +79,6 @@ class NvidiaSageMakerHTTPTTSService(TTSService):
             endpoint_name: Name of the deployed SageMaker endpoint.
             region: AWS region where the endpoint lives.
             sample_rate: Output sample rate in Hz. Defaults to bot's pipeline rate.
-            params: Deprecated — use ``settings`` instead.
             settings: Runtime-updatable settings (voice, language).
             **kwargs: Forwarded to :class:`TTSService`.
         """
@@ -218,17 +217,7 @@ class NvidiaSageMakerHTTPTTSService(TTSService):
         await self.start_tts_usage_metrics(text)
 
 
-@dataclass
-class NvidiaSageMakerWSTTSSettings(TTSSettings):
-    """Settings for NvidiaSageMakerWebsocketTTSService.
-
-    Parameters:
-        voice: NIM voice name (e.g. ``Magpie-Multilingual.EN-US.Aria``).
-        language: BCP-47 language code passed to NIM (e.g. ``en-US``).
-    """
-
-
-class NvidiaSageMakerWebsocketTTSService(InterruptibleTTSService):
+class NvidiaSageMakerTTSService(InterruptibleTTSService):
     """NVIDIA Magpie TTS service using SageMaker bidirectional streaming.
 
     Maintains a persistent HTTP/2 bidi-stream session to the SageMaker endpoint
@@ -238,17 +227,17 @@ class NvidiaSageMakerWebsocketTTSService(InterruptibleTTSService):
 
     Example::
 
-        tts = NvidiaSageMakerWebsocketTTSService(
+        tts = NvidiaSageMakerTTSService(
             endpoint_name=os.getenv("SAGEMAKER_MAGPIE_ENDPOINT_NAME"),
             region=os.getenv("AWS_REGION", "us-west-2"),
-            settings=NvidiaSageMakerWebsocketTTSService.Settings(
+            settings=NvidiaSageMakerTTSService.Settings(
                 voice="Magpie-Multilingual.EN-US.Aria",
                 language="en-US",
             ),
         )
     """
 
-    Settings = NvidiaSageMakerWSTTSSettings
+    Settings = NvidiaSageMakerTTSSettings
 
     def __init__(
         self,
@@ -256,7 +245,7 @@ class NvidiaSageMakerWebsocketTTSService(InterruptibleTTSService):
         endpoint_name: str,
         region: str = "us-west-2",
         sample_rate: int | None = None,
-        settings: NvidiaSageMakerWSTTSSettings | None = None,
+        settings: NvidiaSageMakerTTSSettings | None = None,
         **kwargs,
     ):
         """Initialize the SageMaker WebSocket TTS service.
@@ -507,4 +496,4 @@ class NvidiaSageMakerWebsocketTTSService(InterruptibleTTSService):
             yield None
         except Exception as e:
             logger.error(f"{self}: TTS error: {e}")
-            yield ErrorFrame(error=f"NvidiaSageMakerWebsocketTTSService error: {e}")
+            yield ErrorFrame(error=f"NvidiaSageMakerTTSService error: {e}")
