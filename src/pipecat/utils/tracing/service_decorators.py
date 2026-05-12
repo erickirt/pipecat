@@ -360,7 +360,7 @@ def traced_tts(func: Callable | None = None, *, name: str | None = None) -> Call
                 await original_setup(self, setup)
                 install_audio_context_patches(self)
 
-            patched_setup.__tts_tracing_setup_wrapped__ = True
+            setattr(patched_setup, "__tts_tracing_setup_wrapped__", True)
             owner.setup = patched_setup
 
         def attach_run_tts_attributes(service, text, args, kwargs):
@@ -418,7 +418,11 @@ def traced_tts(func: Callable | None = None, *, name: str | None = None) -> Call
         return _TracedTTSDescriptor()
 
     if func is not None:
-        return decorator(func)
+        # ``decorator(func)`` returns a descriptor placeholder that
+        # Python replaces with the real wrapped function once
+        # ``__set_name__`` runs at class definition time. Pyright sees
+        # only the descriptor instance, hence the ignore.
+        return decorator(func)  # type: ignore[return-value]
     return decorator
 
 
@@ -493,10 +497,12 @@ def traced_stt(func: Callable | None = None, *, name: str | None = None) -> Call
                 """Open the STT span, anchored at ``segment_start_time`` if set."""
                 parent = _get_turn_context(service) or _get_parent_service_context(service)
                 tracer = trace.get_tracer("pipecat")
-                kwargs = {"context": parent}
-                if state["segment_start_time"] is not None:
-                    kwargs["start_time"] = int(state["segment_start_time"] * 1e9)
-                span = tracer.start_span("stt", **kwargs)
+                start_time_ns = (
+                    int(state["segment_start_time"] * 1e9)
+                    if state["segment_start_time"] is not None
+                    else None
+                )
+                span = tracer.start_span("stt", context=parent, start_time=start_time_ns)
                 try:
                     settings = getattr(service, "_settings", None)
                     add_stt_span_attributes(
@@ -637,7 +643,7 @@ def traced_stt(func: Callable | None = None, *, name: str | None = None) -> Call
                     except Exception as e:
                         logging.warning(f"Error in STT post-push tracing: {e}")
 
-            patched_push_frame.__stt_tracing_push_frame_wrapped__ = True
+            setattr(patched_push_frame, "__stt_tracing_push_frame_wrapped__", True)
             owner.push_frame = patched_push_frame
 
         def patch_stop_ttfb_metrics(owner):
@@ -681,7 +687,7 @@ def traced_stt(func: Callable | None = None, *, name: str | None = None) -> Call
                 except Exception as e:
                     logging.warning(f"Error in STT stop_ttfb_metrics tracing: {e}")
 
-            patched_stop.__stt_tracing_stop_ttfb_wrapped__ = True
+            setattr(patched_stop, "__stt_tracing_stop_ttfb_wrapped__", True)
             owner.stop_ttfb_metrics = patched_stop
 
         class _TracedSTTDescriptor:
@@ -704,7 +710,11 @@ def traced_stt(func: Callable | None = None, *, name: str | None = None) -> Call
         return _TracedSTTDescriptor()
 
     if func is not None:
-        return decorator(func)
+        # ``decorator(func)`` returns a descriptor placeholder that
+        # Python replaces with the real wrapped function once
+        # ``__set_name__`` runs at class definition time. Pyright sees
+        # only the descriptor instance, hence the ignore.
+        return decorator(func)  # type: ignore[return-value]
     return decorator
 
 
