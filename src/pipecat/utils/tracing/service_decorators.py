@@ -889,10 +889,6 @@ def traced_llm(func: Callable | None = None, *, name: str | None = None) -> Call
                         fn_called = True
                         result = await f(self, context, *args, **kwargs)
 
-                        # Add aggregated output after function completes, if available
-                        if output_text:
-                            current_span.set_attribute("output", output_text)
-
                         return result
 
                     finally:
@@ -904,6 +900,15 @@ def traced_llm(func: Callable | None = None, *, name: str | None = None) -> Call
                             and original_start_llm_usage_metrics
                         ):
                             self.start_llm_usage_metrics = original_start_llm_usage_metrics
+
+                        # Attach whatever output text we accumulated so
+                        # far. Doing this in finally captures partial
+                        # output when ``f`` is cancelled or raises mid-
+                        # stream (e.g. interruption during LLM
+                        # generation), rather than only on clean
+                        # completion.
+                        if output_text:
+                            current_span.set_attribute("output", output_text)
 
                         # Update TTFB metric
                         ttfb: float | None = getattr(getattr(self, "_metrics", None), "ttfb", None)
