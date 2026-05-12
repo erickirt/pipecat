@@ -479,9 +479,7 @@ class NvidiaSageMakerTTSService(InterruptibleTTSService):
         """Send text to NIM; audio arrives asynchronously via _receive_messages."""
         logger.debug(f"{self}: Generating TTS [{text}]")
 
-        text = sanitize_text_for_tts(text)
-
-        logger.debug(f"{self}: sanitized text: {text}")
+        text = text.strip()
         if not text or not any(c.isalnum() for c in text):
             return
 
