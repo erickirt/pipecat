@@ -254,7 +254,7 @@ class OpenAIRealtimeLLMService(LLMService[OpenAIRealtimeLLMAdapter]):
         """
         # 1. Initialize default_settings with hardcoded defaults
         default_settings = self.Settings(
-            model="gpt-realtime-1.5",
+            model="gpt-realtime-2",
             system_instruction=None,
             temperature=None,
             max_tokens=None,
