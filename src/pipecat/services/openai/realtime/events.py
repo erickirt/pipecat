@@ -13,12 +13,11 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from pipecat.adapters.schemas.tools_schema import ToolsSchema
+from pipecat.services.openai._constants import OPENAI_REALTIME_WHISPER_MODEL, OPENAI_SAMPLE_RATE
 
 #
 # session properties
 #
-
-GPT_REALTIME_WHISPER_MODEL = "gpt-realtime-whisper"
 
 
 class AudioFormat(BaseModel):
@@ -36,7 +35,7 @@ class PCMAudioFormat(AudioFormat):
     """
 
     type: Literal["audio/pcm"] = "audio/pcm"
-    rate: Literal[24000] = 24000
+    rate: Literal[24000] = OPENAI_SAMPLE_RATE
 
 
 class PCMUAudioFormat(AudioFormat):
@@ -62,13 +61,13 @@ class PCMAAudioFormat(AudioFormat):
 class InputAudioTranscription(BaseModel):
     """Configuration for audio transcription settings."""
 
-    model: str = GPT_REALTIME_WHISPER_MODEL
+    model: str = OPENAI_REALTIME_WHISPER_MODEL
     language: str | None
     prompt: str | None
 
     def __init__(
         self,
-        model: str | None = GPT_REALTIME_WHISPER_MODEL,
+        model: str | None = OPENAI_REALTIME_WHISPER_MODEL,
         language: str | None = None,
         prompt: str | None = None,
     ):

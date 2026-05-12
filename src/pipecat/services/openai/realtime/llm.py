@@ -51,6 +51,7 @@ from pipecat.metrics.metrics import LLMTokenUsage
 from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.llm_service import FunctionCallFromLLM, LLMService
+from pipecat.services.openai._constants import OPENAI_REALTIME_WHISPER_MODEL, OPENAI_SAMPLE_RATE
 from pipecat.services.settings import (
     NOT_GIVEN,
     LLMSettings,
@@ -337,11 +338,11 @@ class OpenAIRealtimeLLMService(LLMService[OpenAIRealtimeLLMAdapter]):
             and session_properties.audio.input.transcription
             else None
         )
-        if transcription and transcription.model == events.GPT_REALTIME_WHISPER_MODEL:
+        if transcription and transcription.model == OPENAI_REALTIME_WHISPER_MODEL:
             if transcription.prompt:
                 transcription.prompt = None
                 logger.warning(
-                    f"{events.GPT_REALTIME_WHISPER_MODEL} does not support the prompt "
+                    f"{OPENAI_REALTIME_WHISPER_MODEL} does not support the prompt "
                     "parameter; omitting prompt from OpenAI Realtime input audio "
                     "transcription settings."
                 )
@@ -505,7 +506,7 @@ class OpenAIRealtimeLLMService(LLMService[OpenAIRealtimeLLMAdapter]):
         self._current_audio_response = None
 
     def _calculate_audio_duration_ms(
-        self, total_bytes: int, sample_rate: int = 24000, bytes_per_sample: int = 2
+        self, total_bytes: int, sample_rate: int = OPENAI_SAMPLE_RATE, bytes_per_sample: int = 2
     ) -> int:
         """Calculate audio duration in milliseconds based on PCM audio parameters."""
         samples = total_bytes / bytes_per_sample
@@ -797,7 +798,7 @@ class OpenAIRealtimeLLMService(LLMService[OpenAIRealtimeLLMAdapter]):
         self._current_audio_response.total_size += len(audio)
         frame = TTSAudioRawFrame(
             audio=audio,
-            sample_rate=24000,
+            sample_rate=OPENAI_SAMPLE_RATE,
             num_channels=1,
         )
         await self.push_frame(frame)

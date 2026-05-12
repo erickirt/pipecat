@@ -12,6 +12,7 @@ from pipecat.services.deepgram.sagemaker.stt import DeepgramSageMakerSTTSettings
 from pipecat.services.deepgram.stt import DeepgramSTTService, DeepgramSTTSettings
 from pipecat.services.inworld.realtime import events as inworld_events
 from pipecat.services.inworld.realtime.llm import InworldRealtimeLLMSettings
+from pipecat.services.openai._constants import OPENAI_REALTIME_WHISPER_MODEL
 from pipecat.services.openai.realtime import events
 from pipecat.services.openai.realtime.llm import (
     OpenAIRealtimeLLMService,
@@ -757,7 +758,7 @@ class TestOpenAIRealtimeSessionProperties:
             audio=events.AudioConfiguration(
                 input=events.AudioInput(
                     transcription=events.InputAudioTranscription(
-                        model=events.GPT_REALTIME_WHISPER_MODEL,
+                        model=OPENAI_REALTIME_WHISPER_MODEL,
                         prompt="Keywords: metoprolol",
                     )
                 )
