@@ -174,7 +174,7 @@ class NvidiaSageMakerHTTPTTSService(TTSService):
         logger.debug(f"{self}: Generating TTS [{text}]")
 
         text = sanitize_text_for_tts(text)
-        if not text:
+        if not text or not any(c.isalnum() for c in text):
             return
 
         try:
@@ -199,8 +199,12 @@ class NvidiaSageMakerHTTPTTSService(TTSService):
                 yield ErrorFrame(error="SageMaker TTS returned no audio stream")
                 return
 
+            first_chunk = True
             async for chunk in response["Body"].iter_chunks(chunk_size=self.chunk_size):
                 if chunk:
+                    if first_chunk:
+                        await self.stop_ttfb_metrics()
+                        first_chunk = False
                     yield TTSAudioRawFrame(
                         audio=chunk,
                         sample_rate=self.sample_rate,
@@ -210,8 +214,8 @@ class NvidiaSageMakerHTTPTTSService(TTSService):
         except Exception as e:
             logger.error(f"{self}: SageMaker TTS error: {e}")
             yield ErrorFrame(error=f"SageMaker TTS error: {e}")
-        finally:
-            await self.stop_ttfb_metrics()
+
+        await self.start_tts_usage_metrics(text)
 
 
 @dataclass
@@ -489,7 +493,7 @@ class NvidiaSageMakerWebsocketTTSService(InterruptibleTTSService):
         text = sanitize_text_for_tts(text)
 
         logger.debug(f"{self}: sanitized text: {text}")
-        if not text:
+        if not text or not any(c.isalnum() for c in text):
             return
 
         try:
@@ -499,6 +503,7 @@ class NvidiaSageMakerWebsocketTTSService(InterruptibleTTSService):
             assert self._client is not None
             await self._client.send_json({"type": "input_text.append", "text": text})
             await self._client.send_json({"type": "input_text.commit"})
+            await self.start_tts_usage_metrics(text)
             yield None
         except Exception as e:
             logger.error(f"{self}: TTS error: {e}")
