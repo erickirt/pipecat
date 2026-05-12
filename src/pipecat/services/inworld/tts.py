@@ -70,10 +70,16 @@ class InworldTTSSettings(TTSSettings):
     Parameters:
         speaking_rate: Speaking rate for speech synthesis.
         temperature: Temperature for speech synthesis.
+        delivery_mode: Controls the stability vs. creativity tradeoff.
+            ``"STABLE"`` produces reliable, predictable speech.
+            ``"BALANCED"`` is the default midpoint.
+            ``"CREATIVE"`` produces more expressive, emotionally varied speech.
+            Only supported by ``inworld-tts-2``.
     """
 
     speaking_rate: float | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
     temperature: float | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    delivery_mode: str | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
 
     _aliases: ClassVar[dict[str, str]] = {
         "voiceId": "voice",
@@ -167,6 +173,7 @@ class InworldHttpTTSService(TTSService):
             language=None,
             speaking_rate=None,
             temperature=None,
+            delivery_mode=None,
         )
 
         # 2. Apply direct init arg overrides (deprecated)
@@ -313,6 +320,10 @@ class InworldHttpTTSService(TTSService):
 
         if self._settings.temperature is not None:
             payload["temperature"] = self._settings.temperature
+        if self._settings.delivery_mode is not None:
+            payload["delivery_mode"] = self._settings.delivery_mode
+        if self._settings.language is not None:
+            payload["language"] = self._settings.language
 
         # Use WORD timestamps for simplicity and correct spacing/capitalization
         payload["timestampType"] = self._timestamp_type
@@ -609,6 +620,7 @@ class InworldTTSService(WebsocketTTSService):
             language=None,
             speaking_rate=None,
             temperature=None,
+            delivery_mode=None,
         )
 
         # 2. Apply direct init arg overrides (deprecated)
@@ -1089,6 +1101,10 @@ class InworldTTSService(WebsocketTTSService):
 
         if self._settings.temperature is not None:
             create_config["temperature"] = self._settings.temperature
+        if self._settings.delivery_mode is not None:
+            create_config["delivery_mode"] = self._settings.delivery_mode
+        if self._settings.language is not None:
+            create_config["language"] = self._settings.language
         if self._apply_text_normalization is not None:
             create_config["applyTextNormalization"] = self._apply_text_normalization
         if self._auto_mode is not None:
