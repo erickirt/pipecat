@@ -39,8 +39,9 @@ from pipecat.frames.frames import (
 )
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.aws.sagemaker.bidi_client import SageMakerBidiClient
-from pipecat.services.settings import STTSettings
+from pipecat.services.settings import STTSettings, assert_given
 from pipecat.services.stt_service import STTService
+from pipecat.transcriptions.language import Language
 from pipecat.utils.time import time_now_iso8601
 from pipecat.utils.tracing.service_decorators import traced_stt
 
@@ -292,6 +293,9 @@ class NvidiaSageMakerSTTService(STTService):
                 ):
                     logger.debug(f"{self}: received event: {event_type}")
 
+                _lang = assert_given(self._settings.language)
+                language: Language | None = Language(_lang) if _lang is not None else None
+
                 if event_type == "conversation.item.input_audio_transcription.delta":
                     delta = msg.get("delta", "")
                     if delta:
@@ -301,7 +305,7 @@ class NvidiaSageMakerSTTService(STTService):
                                 delta,
                                 self._user_id,
                                 time_now_iso8601(),
-                                language=self._settings.language,
+                                language=language,
                                 result=msg,
                             )
                         )
@@ -315,7 +319,7 @@ class NvidiaSageMakerSTTService(STTService):
                                 transcript,
                                 self._user_id,
                                 time_now_iso8601(),
-                                language=self._settings.language,
+                                language=language,
                                 result=msg,
                                 finalized=True,
                             )
