@@ -29,7 +29,6 @@ from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.aws.sagemaker.bidi_client import SageMakerBidiClient
 from pipecat.services.settings import TTSSettings
 from pipecat.services.tts_service import InterruptibleTTSService, TTSService
-from pipecat.utils.text.tts_text_sanitizer import sanitize_text_for_tts
 from pipecat.utils.tracing.service_decorators import traced_tts
 
 
