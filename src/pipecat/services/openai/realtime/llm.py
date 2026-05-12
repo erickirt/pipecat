@@ -480,18 +480,6 @@ class OpenAIRealtimeLLMService(LLMService[OpenAIRealtimeLLMAdapter]):
             await self.send_client_event(events.ResponseCreateEvent())
 
     async def _handle_bot_stopped_speaking(self):
-        if self._current_audio_response:
-            current = self._current_audio_response
-            elapsed_ms = int(time.time() * 1000) - current.start_time_ms
-            logger.debug(
-                f"{self} BotStoppedSpeakingFrame received; clearing audio response "
-                f"(item_id={current.item_id} response_id={current.response_id} "
-                f"elapsed_since_first_delta={elapsed_ms}ms)"
-            )
-        else:
-            logger.debug(
-                f"{self} BotStoppedSpeakingFrame received but no current audio response is tracked"
-            )
         self._current_audio_response = None
 
     def _calculate_audio_duration_ms(
@@ -711,8 +699,6 @@ class OpenAIRealtimeLLMService(LLMService[OpenAIRealtimeLLMAdapter]):
                 await self._handle_evt_session_updated(evt)
             elif evt.type == "response.output_audio.delta":
                 await self._handle_evt_audio_delta(evt)
-            elif evt.type == "response.output_audio.done":
-                await self._handle_evt_audio_done(evt)
             elif evt.type == "conversation.item.added":
                 await self._handle_evt_conversation_item_added(evt)
             elif evt.type == "conversation.item.done":
@@ -774,11 +760,6 @@ class OpenAIRealtimeLLMService(LLMService[OpenAIRealtimeLLMAdapter]):
                 start_time_ms=int(time.time() * 1000),
                 response_id=evt.response_id,
             )
-            logger.debug(
-                f"{self} first audio delta for item_id={evt.item_id} "
-                f"response_id={evt.response_id} output_index={evt.output_index} "
-                f"content_index={evt.content_index}"
-            )
             await self.push_frame(TTSStartedFrame())
         elif self._current_audio_response.item_id != evt.item_id:
             # A response can contain multiple output items (observed with
@@ -788,7 +769,7 @@ class OpenAIRealtimeLLMService(LLMService[OpenAIRealtimeLLMAdapter]):
             # TTSStartedFrame. Reset total_size so truncation math reflects the
             # current item only (last-item-wins, matching openai-agents-python).
             logger.debug(
-                f"{self} advancing to next output item "
+                f"{self} advancing to next audio output item "
                 f"(prev item_id={self._current_audio_response.item_id} -> "
                 f"new item_id={evt.item_id} response_id={evt.response_id} "
                 f"output_index={evt.output_index} content_index={evt.content_index})"
@@ -807,16 +788,6 @@ class OpenAIRealtimeLLMService(LLMService[OpenAIRealtimeLLMAdapter]):
             num_channels=1,
         )
         await self.push_frame(frame)
-
-    async def _handle_evt_audio_done(self, evt):
-        # Debug-trace only; TTSStoppedFrame is emitted on response.done so that
-        # multi-output-item responses still produce exactly one bracketing
-        # Started/Stopped pair (see _handle_evt_response_done).
-        logger.debug(
-            f"{self} audio.done for item_id={evt.item_id} "
-            f"response_id={evt.response_id} output_index={evt.output_index} "
-            f"content_index={evt.content_index}"
-        )
 
     async def _handle_evt_conversation_item_added(self, evt):
         """Handle conversation.item.added event - item is added but may still be processing."""
