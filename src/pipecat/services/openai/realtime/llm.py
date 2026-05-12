@@ -679,7 +679,8 @@ class OpenAIRealtimeLLMService(LLMService[OpenAIRealtimeLLMAdapter]):
             assert_given(self._settings.session_properties)
         )
         handled = {"session_properties", "system_instruction"}
-        if changed.keys() & handled or prompt_omitted:
+        handled_settings_changed = bool(changed.keys() & handled)
+        if handled_settings_changed or prompt_omitted:
             await self._send_session_update()
         self._warn_unhandled_updated_settings(changed.keys() - handled)
         return changed
