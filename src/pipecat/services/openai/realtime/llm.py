@@ -52,6 +52,7 @@ from pipecat.processors.aggregators import async_tool_messages
 from pipecat.processors.aggregators.llm_context import LLMContext, LLMSpecificMessage
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.llm_service import FunctionCallFromLLM, LLMService
+from pipecat.services.openai._constants import OPENAI_REALTIME_WHISPER_MODEL, OPENAI_SAMPLE_RATE
 from pipecat.services.settings import (
     NOT_GIVEN,
     LLMSettings,
@@ -290,6 +291,8 @@ class OpenAIRealtimeLLMService(LLMService[OpenAIRealtimeLLMAdapter]):
         if settings is not None:
             default_settings.apply_update(settings)
 
+        self._omit_unsupported_input_audio_transcription_prompt(default_settings.session_properties)
+
         # Build WebSocket URL with model query parameter
         # Source: https://platform.openai.com/docs/guides/realtime-websocket
         full_url = f"{base_url}?model={default_settings.model}"
@@ -329,6 +332,29 @@ class OpenAIRealtimeLLMService(LLMService[OpenAIRealtimeLLMAdapter]):
         self._register_event_handler("on_conversation_item_created")
         self._register_event_handler("on_conversation_item_updated")
         self._retrieve_conversation_item_futures = {}
+
+    @staticmethod
+    def _omit_unsupported_input_audio_transcription_prompt(
+        session_properties: events.SessionProperties,
+    ) -> bool:
+        """Drop input transcription prompt settings unsupported by the selected model."""
+        transcription = (
+            session_properties.audio.input.transcription
+            if session_properties.audio
+            and session_properties.audio.input
+            and session_properties.audio.input.transcription
+            else None
+        )
+        if transcription and transcription.model == OPENAI_REALTIME_WHISPER_MODEL:
+            if transcription.prompt:
+                transcription.prompt = None
+                logger.warning(
+                    f"{OPENAI_REALTIME_WHISPER_MODEL} does not support the prompt "
+                    "parameter; omitting prompt from OpenAI Realtime input audio "
+                    "transcription settings."
+                )
+                return True
+        return False
 
     def can_generate_metrics(self) -> bool:
         """Check if the service can generate usage metrics.
@@ -487,7 +513,7 @@ class OpenAIRealtimeLLMService(LLMService[OpenAIRealtimeLLMAdapter]):
         self._current_audio_response = None
 
     def _calculate_audio_duration_ms(
-        self, total_bytes: int, sample_rate: int = 24000, bytes_per_sample: int = 2
+        self, total_bytes: int, sample_rate: int = OPENAI_SAMPLE_RATE, bytes_per_sample: int = 2
     ) -> int:
         """Calculate audio duration in milliseconds based on PCM audio parameters."""
         samples = total_bytes / bytes_per_sample
@@ -656,8 +682,12 @@ class OpenAIRealtimeLLMService(LLMService[OpenAIRealtimeLLMAdapter]):
     async def _update_settings(self, delta):
         """Apply a settings delta, sending a session update when needed."""
         changed = await super()._update_settings(delta)
+        prompt_omitted = self._omit_unsupported_input_audio_transcription_prompt(
+            assert_given(self._settings.session_properties)
+        )
         handled = {"session_properties", "system_instruction"}
-        if changed.keys() & handled:
+        handled_settings_changed = bool(changed.keys() & handled)
+        if handled_settings_changed or prompt_omitted:
             await self._send_session_update()
         self._warn_unhandled_updated_settings(changed.keys() - handled)
         return changed
@@ -816,7 +846,7 @@ class OpenAIRealtimeLLMService(LLMService[OpenAIRealtimeLLMAdapter]):
         self._current_audio_response.total_size += len(audio)
         frame = TTSAudioRawFrame(
             audio=audio,
-            sample_rate=24000,
+            sample_rate=OPENAI_SAMPLE_RATE,
             num_channels=1,
         )
         await self.push_frame(frame)
