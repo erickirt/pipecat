@@ -60,27 +60,21 @@ from pipecat.frames.frames import (
 )
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.tts_service import TextAggregationMode, TTSService, WebsocketTTSService
-from pipecat.transcriptions.language import Language
+from pipecat.transcriptions.language import Language, resolve_language
 from pipecat.utils.tracing.service_decorators import traced_tts
 
 
 def language_to_inworld_language(language: Language) -> str:
-    """Convert a Language enum to an Inworld TTS language code.
-
-    Inworld TTS accepts BCP-47 language tags. For the generally available
-    languages, Inworld's Playground emits regional tags (e.g. ``en-US``,
-    ``ru-RU``), so base Pipecat languages resolve to those canonical locales.
-    Regional variants can be used to nudge a voice toward a specific accent.
+    """Convert a Language enum to an Inworld TTS BCP-47 language tag.
 
     Args:
         language: The Language enum value to convert.
 
     Returns:
-        The corresponding Inworld language code. Base GA language enums are
-        normalized to Inworld's canonical regional locales. Other language enums
-        are returned as their BCP-47 string values.
+        The corresponding Inworld BCP-47 language tag (e.g. ``"en-US"``).
+        Unverified languages fall back to their BCP-47 string value with a warning.
     """
-    CANONICAL_LOCALES = {
+    LANGUAGE_MAP = {
         Language.AR: "ar-SA",
         Language.DE: "de-DE",
         Language.EN: "en-US",
@@ -97,8 +91,7 @@ def language_to_inworld_language(language: Language) -> str:
         Language.RU: "ru-RU",
         Language.ZH: "zh-CN",
     }
-
-    return CANONICAL_LOCALES.get(language, str(language))
+    return resolve_language(language, LANGUAGE_MAP, use_base_code=False)
 
 
 @dataclass
@@ -117,7 +110,9 @@ class InworldTTSSettings(TTSSettings):
 
     speaking_rate: float | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
     temperature: float | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
-    delivery_mode: str | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    delivery_mode: Literal["STABLE", "BALANCED", "CREATIVE"] | None | _NotGiven = field(
+        default_factory=lambda: NOT_GIVEN
+    )
 
     _aliases: ClassVar[dict[str, str]] = {
         "voiceId": "voice",
