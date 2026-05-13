@@ -201,6 +201,19 @@ def _prepare_language_hints(
     return list(set(prepared_languages))
 
 
+def _language_from_tokens(tokens: list[dict]) -> Language | None:
+    for token in reversed(tokens):
+        language = token.get("language")
+        if not language:
+            continue
+        try:
+            return Language(language)
+        except ValueError:
+            pass
+
+    return None
+
+
 @dataclass
 class SonioxSTTSettings(STTSettings):
     """Settings for SonioxSTTService.
@@ -557,6 +570,7 @@ class SonioxSTTService(WebsocketSTTService):
         async def send_endpoint_transcript():
             if self._final_transcription_buffer:
                 text = "".join(map(lambda token: token["text"], self._final_transcription_buffer))
+                language = _language_from_tokens(self._final_transcription_buffer)
                 # Soniox only pushes TranscriptionFrame when an end token is received,
                 # so every TranscriptionFrame is inherently finalized
                 await self.push_frame(
@@ -564,11 +578,12 @@ class SonioxSTTService(WebsocketSTTService):
                         text=text,
                         user_id=self._user_id,
                         timestamp=time_now_iso8601(),
+                        language=language,
                         result=self._final_transcription_buffer,
                         finalized=True,
                     )
                 )
-                await self._handle_transcription(text, is_final=True)
+                await self._handle_transcription(text, is_final=True, language=language)
                 await self.stop_processing_metrics()
                 self._final_transcription_buffer = []
 
