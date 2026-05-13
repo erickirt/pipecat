@@ -60,7 +60,45 @@ from pipecat.frames.frames import (
 )
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.tts_service import TextAggregationMode, TTSService, WebsocketTTSService
+from pipecat.transcriptions.language import Language
 from pipecat.utils.tracing.service_decorators import traced_tts
+
+
+def language_to_inworld_language(language: Language) -> str:
+    """Convert a Language enum to an Inworld TTS language code.
+
+    Inworld TTS accepts BCP-47 language tags. For the generally available
+    languages, Inworld's Playground emits regional tags (e.g. ``en-US``,
+    ``ru-RU``), so base Pipecat languages resolve to those canonical locales.
+    Regional variants can be used to nudge a voice toward a specific accent.
+
+    Args:
+        language: The Language enum value to convert.
+
+    Returns:
+        The corresponding Inworld language code. Base GA language enums are
+        normalized to Inworld's canonical regional locales. Other language enums
+        are returned as their BCP-47 string values.
+    """
+    CANONICAL_LOCALES = {
+        Language.AR: "ar-SA",
+        Language.DE: "de-DE",
+        Language.EN: "en-US",
+        Language.ES: "es-ES",
+        Language.FR: "fr-FR",
+        Language.HE: "he-IL",
+        Language.HI: "hi-IN",
+        Language.IT: "it-IT",
+        Language.JA: "ja-JP",
+        Language.KO: "ko-KR",
+        Language.NL: "nl-NL",
+        Language.PL: "pl-PL",
+        Language.PT: "pt-BR",
+        Language.RU: "ru-RU",
+        Language.ZH: "zh-CN",
+    }
+
+    return CANONICAL_LOCALES.get(language, str(language))
 
 
 @dataclass
@@ -234,6 +272,17 @@ class InworldHttpTTSService(TTSService):
         """
         return True
 
+    def language_to_service_language(self, language: Language) -> str | None:
+        """Convert a Language enum to Inworld language format.
+
+        Args:
+            language: The language to convert.
+
+        Returns:
+            The Inworld-specific BCP-47 language code, or None if not supported.
+        """
+        return language_to_inworld_language(language)
+
     async def start(self, frame: StartFrame):
         """Start the Inworld TTS service.
 
@@ -321,7 +370,7 @@ class InworldHttpTTSService(TTSService):
         if self._settings.temperature is not None:
             payload["temperature"] = self._settings.temperature
         if self._settings.delivery_mode is not None:
-            payload["delivery_mode"] = self._settings.delivery_mode
+            payload["deliveryMode"] = self._settings.delivery_mode
         if self._settings.language is not None:
             payload["language"] = self._settings.language
 
@@ -711,6 +760,17 @@ class InworldTTSService(WebsocketTTSService):
             True, as Inworld WebSocket TTS service supports metrics generation.
         """
         return True
+
+    def language_to_service_language(self, language: Language) -> str | None:
+        """Convert a Language enum to Inworld language format.
+
+        Args:
+            language: The language to convert.
+
+        Returns:
+            The Inworld-specific BCP-47 language code, or None if not supported.
+        """
+        return language_to_inworld_language(language)
 
     async def start(self, frame: StartFrame):
         """Start the Inworld WebSocket TTS service.
@@ -1102,7 +1162,7 @@ class InworldTTSService(WebsocketTTSService):
         if self._settings.temperature is not None:
             create_config["temperature"] = self._settings.temperature
         if self._settings.delivery_mode is not None:
-            create_config["delivery_mode"] = self._settings.delivery_mode
+            create_config["deliveryMode"] = self._settings.delivery_mode
         if self._settings.language is not None:
             create_config["language"] = self._settings.language
         if self._apply_text_normalization is not None:
