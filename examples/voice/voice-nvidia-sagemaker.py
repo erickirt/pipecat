@@ -54,7 +54,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
     logger.info(f"Starting bot")
 
     stt = NvidiaSageMakerSTTService(
-        endpoint_name=os.getenv("SAGEMAKER_ASR_ENDPOINT_NAME"),
+        endpoint_name=os.environ["SAGEMAKER_ASR_ENDPOINT_NAME"],
         region=os.getenv("AWS_REGION", "us-west-2"),
     )
 
