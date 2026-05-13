@@ -67,7 +67,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
     )
 
     tts = NvidiaSageMakerTTSService(
-        endpoint_name=os.getenv("SAGEMAKER_MAGPIE_ENDPOINT_NAME"),
+        endpoint_name=os.environ["SAGEMAKER_MAGPIE_ENDPOINT_NAME"],
         region=os.getenv("AWS_REGION", "us-west-2"),
     )
 
