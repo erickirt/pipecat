@@ -34,25 +34,26 @@ def test_language_from_tokens_uses_single_recognized_language():
     assert _language_from_tokens(tokens) == Language.EN
 
 
-def test_language_from_tokens_uses_latest_language():
+def test_language_from_tokens_uses_most_common_language():
     tokens = [
-        {"text": "Hallo", "language": "nl"},
-        {"text": " world", "language": "en"},
+        {"text": "Ik", "language": "nl"},
+        {"text": " zoek", "language": "nl"},
+        {"text": " computer", "language": "en"},
     ]
 
-    assert _language_from_tokens(tokens) == Language.EN
+    assert _language_from_tokens(tokens) == Language.NL
 
 
-def test_language_from_tokens_skips_unknown_latest_language():
+def test_language_from_tokens_skips_unknown_language():
     tokens = [
-        {"text": " world", "language": "en"},
+        {"text": "Hello", "language": "en"},
         {"text": "!", "language": "klingon"},
     ]
 
     assert _language_from_tokens(tokens) == Language.EN
 
 
-def test_language_from_tokens_skips_missing_latest_language():
+def test_language_from_tokens_skips_missing_language():
     tokens = [
         {"text": "Hello", "language": "en"},
         {"text": " wereld"},
@@ -69,6 +70,15 @@ def test_language_from_tokens_ignores_unknown_and_missing_languages():
     ]
 
     assert _language_from_tokens(tokens) is None
+
+
+def test_language_from_tokens_uses_first_language_on_tie():
+    tokens = [
+        {"text": "Hello", "language": "en"},
+        {"text": " wereld", "language": "nl"},
+    ]
+
+    assert _language_from_tokens(tokens) == Language.EN
 
 
 @pytest.mark.asyncio
@@ -90,8 +100,9 @@ async def test_receive_messages_sets_final_transcription_language(monkeypatch):
         json.dumps(
             {
                 "tokens": [
-                    {"text": "Hello", "is_final": True, "language": "en"},
-                    {"text": " world", "is_final": True, "language": "en"},
+                    {"text": "Ik", "is_final": True, "language": "nl"},
+                    {"text": " zoek", "is_final": True, "language": "nl"},
+                    {"text": " computer", "is_final": True, "language": "en"},
                     {"text": END_TOKEN, "is_final": True},
                 ]
             }
@@ -108,14 +119,15 @@ async def test_receive_messages_sets_final_transcription_language(monkeypatch):
 
     final_frames = [frame for frame in pushed_frames if isinstance(frame, TranscriptionFrame)]
     assert len(final_frames) == 1
-    assert final_frames[0].text == "Hello world"
-    assert final_frames[0].language == Language.EN
+    assert final_frames[0].text == "Ik zoek computer"
+    assert final_frames[0].language == Language.NL
     assert final_frames[0].finalized is True
     assert final_frames[0].result == [
-        {"text": "Hello", "is_final": True, "language": "en"},
-        {"text": " world", "is_final": True, "language": "en"},
+        {"text": "Ik", "is_final": True, "language": "nl"},
+        {"text": " zoek", "is_final": True, "language": "nl"},
+        {"text": " computer", "is_final": True, "language": "en"},
     ]
-    assert traced_transcriptions == [("Hello world", True, Language.EN)]
+    assert traced_transcriptions == [("Ik zoek computer", True, Language.NL)]
 
 
 @pytest.mark.asyncio

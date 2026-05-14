@@ -8,6 +8,7 @@
 
 import json
 import time
+from collections import Counter
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from typing import Any
@@ -202,16 +203,21 @@ def _prepare_language_hints(
 
 
 def _language_from_tokens(tokens: list[dict]) -> Language | None:
-    for token in reversed(tokens):
+    language_counts: Counter[Language] = Counter()
+
+    for token in tokens:
         language = token.get("language")
         if not language:
             continue
         try:
-            return Language(language)
+            language_counts[Language(language)] += 1
         except ValueError:
             pass
 
-    return None
+    if not language_counts:
+        return None
+
+    return language_counts.most_common(1)[0][0]
 
 
 @dataclass
