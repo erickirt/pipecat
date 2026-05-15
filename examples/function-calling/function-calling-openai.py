@@ -68,9 +68,9 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
     tts = OpenAITTSService(
         api_key=os.environ["OPENAI_API_KEY"],
         settings=OpenAITTSService.Settings(
+            instructions="Please speak clearly and at a moderate pace.",
             voice="ballad",
         ),
-        instructions="Please speak clearly and at a moderate pace.",
     )
 
     llm = OpenAILLMService(
