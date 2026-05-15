@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- towncrier release notes start -->
 
+## [1.2.1] - 2026-05-15
+
+### Changed
+
+- Changed the default WebSocket endpoints for `GradiumSTTService` and
+  `GradiumTTSService` to the region-neutral
+  `wss://api.gradium.ai/api/speech/asr` and
+  `wss://api.gradium.ai/api/speech/tts`. Gradium now automatically routes
+  traffic to the nearest endpoint. Override the url to pin to a specific
+  region.
+  (PR [#4500](https://github.com/pipecat-ai/pipecat/pull/4500))
+
+### Fixed
+
+- Fixed bot hangs when `filter_incomplete_user_turns` was enabled and the LLM
+  responded by calling a tool. The user turn never finalized, so the assistant
+  aggregator gated the tool-result context push and the LLM continuation never
+  ran. Tool calls now finalize the turn the moment they start, before the
+  function dispatches.
+  (PR [#4501](https://github.com/pipecat-ai/pipecat/pull/4501))
+
 ## [1.2.0] - 2026-05-14
 
 ### Added
